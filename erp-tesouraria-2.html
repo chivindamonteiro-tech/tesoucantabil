@@ -102,6 +102,28 @@ const CATEGORIAS = ["ADMINISTRATIVAS","COM PESSOAL","COMERCIAS E VENDAS","CUSTOS
 "Armazenamento e Stock","Manutenção e Reparação","Hospedagem / Hotelaria","Restaurante","Seguros",
 "Investimentos / Imobilizado","Despesas Não Aceites Fiscalmente"];
 
+/* Categoria "neutra" usada pelo FaturaBot quando uma única fatura reúne várias
+   categorias de despesa: o Lançamento fica com esta categoria (um só movimento,
+   uma só conta bancária/caixa), e o detalhe por categoria de cada item fica
+   guardado em l.itensDetalhe — os relatórios por categoria (Resumo Mensal,
+   Orçamento vs Realizado, DRE, retenções) usam esse detalhe para contar cada
+   parte na categoria certa, sem fragmentar a Tesouraria em várias saídas. */
+const CATEGORIA_DIVERSOS = "DIVERSOS (fatura com várias categorias)";
+/* Devolve a lista de lançamentos "explodida": qualquer lançamento com
+   itensDetalhe vira várias entradas virtuais (uma por categoria do detalhe),
+   para uso em somas/relatórios por categoria. Lançamentos normais passam
+   inalterados. NUNCA usar esta lista para saldos de Tesouraria/Contas a
+   Pagar — aí o movimento real é sempre o lançamento único original. */
+function explodirLancamentos(lista){
+  const out = [];
+  lista.forEach(l=>{
+    if(Array.isArray(l.itensDetalhe) && l.itensDetalhe.length){
+      l.itensDetalhe.forEach(it=> out.push({...l, categoria:it.categoria, valor:it.valor, descricao:it.descricao||l.descricao}));
+    } else out.push(l);
+  });
+  return out;
+}
+
 /* Origem do valor — os "caixas"/unidades de negócio, tal como na folha LISTAS (col. A) e usados no
    quadro RECEITAS da folha RESUMO. Cada lançamento (sobretudo receitas) pode indicar de onde veio o dinheiro. */
 const ORIGENS = ["ZOOM'S LODGE CASH","ZOOM'S LODGE BANCO",
@@ -182,20 +204,37 @@ function faturabotSugestao(fornecedor, descricao){
   if(s) return {categoria:s.categoria, conta:'', origemSugestao:`padrão conhecido (${s.nota})`};
   return null;
 }
+const fbItensAbertos = new Set(); /* ids de faturas com o painel de itens expandido na tela do FaturaBot */
+let fbItensFormulario = []; /* itens (categorias de despesa) sendo montados no formulário de nova fatura */
+function faturabotGetItens(f){
+  if(Array.isArray(f.itens) && f.itens.length) return f.itens;
+  return [{descricao:f.descricao||'', valor:Number(f.valor)||0, categoria:f.categoria||CATEGORIAS[0]}];
+}
+function faturabotTotalItens(f){
+  return faturabotGetItens(f).reduce((s,i)=>s+(Number(i.valor)||0),0);
+}
 function faturabotAprender(fatura){
   const chave = (fatura.fornecedor||'').toLowerCase().trim();
   if(!chave) return;
-  DB.faturabotAprendizado[chave] = {categoria:fatura.categoria, conta:fatura.conta, origem:fatura.origem};
+  const itens = faturabotGetItens(fatura);
+  /* Só aprendemos uma sugestão automática por fornecedor quando a fatura teve
+     uma única categoria — com várias categorias na mesma fatura, guardar uma
+     só sugestão seria enganador para a próxima leitura. A conta/forma de
+     pagamento é sempre a da fatura (é um único movimento). */
+  if(itens.length===1) DB.faturabotAprendizado[chave] = {categoria:itens[0].categoria, conta:fatura.conta, origem:fatura.origem};
 }
 function faturabotValidar(f){
   const alertas = [];
   if(!f.nif || f.nif.trim().length<5) alertas.push('NIF em falta ou com formato incompleto.');
-  const dupFB = DB.faturabot.some(x=>x.id!==f.id && x.fornecedor===f.fornecedor && x.nFatura===f.nFatura && Number(x.valor)===Number(f.valor) && f.nFatura);
-  const dupLanc = DB.lancamentos.some(l=>l.entidade===f.fornecedor && l.nFatura===f.nFatura && Number(l.valor)===Number(f.valor) && f.nFatura);
+  const total = faturabotTotalItens(f);
+  const dupFB = DB.faturabot.some(x=>x.id!==f.id && x.fornecedor===f.fornecedor && x.nFatura===f.nFatura && Number(x.valor)===Number(total) && f.nFatura);
+  const dupLanc = DB.lancamentos.some(l=>l.entidade===f.fornecedor && l.nFatura===f.nFatura && Number(l.valor)===Number(total) && f.nFatura);
   if(dupFB || dupLanc) alertas.push('Possível documento duplicado (mesmo fornecedor + nº fatura + valor).');
   if(f.vencimento && f.data && f.vencimento < f.data) alertas.push('Data de vencimento anterior à data da fatura.');
   if(f.iva==='Sim' && (!f.taxaIVA || Number(f.taxaIVA)<=0)) alertas.push('Marcado como sujeito a IVA mas sem taxa definida.');
-  if(!f.valor || Number(f.valor)<=0) alertas.push('Valor em falta ou inválido.');
+  if(!total || total<=0) alertas.push('Valor em falta ou inválido.');
+  const itens = faturabotGetItens(f);
+  if(itens.some(i=>!i.valor || Number(i.valor)<=0)) alertas.push('Há pelo menos um item da fatura sem valor.');
   return alertas;
 }
 let currentTab = "dashboard";
@@ -417,7 +456,7 @@ function viewDashboard(){
   const pendReceber = DB.contasReceber.filter(c=>c.status!=='Pago').reduce((s,c)=>s+Number(c.valor||0),0);
 
   const porCategoria = {};
-  DB.lancamentos.filter(l=>l.tipo==='Despesa').forEach(l=>{
+  explodirLancamentos(DB.lancamentos.filter(l=>l.tipo==='Despesa')).forEach(l=>{
     porCategoria[l.categoria]=(porCategoria[l.categoria]||0)+valorEmKZ(l);
   });
   const maxCat = Math.max(1,...Object.values(porCategoria));
@@ -458,21 +497,34 @@ function viewFaturabot(){
   const pendentes = DB.faturabot.filter(f=>f.status==='Pendente').slice().reverse();
   const processadas = DB.faturabot.filter(f=>f.status!=='Pendente').slice().reverse().slice(0,50);
 
+  const linhaItemEditavel = (f, item, idx, comAcoes)=>`
+    <tr class="fb-item-sub">
+      <td></td><td></td>
+      <td colspan="3"><input data-fb-item-campo="${f.id}:${idx}:descricao" value="${(item.descricao||'').replace(/"/g,'&quot;')}" placeholder="Descrição do item" ${comAcoes?'':'disabled'} style="width:100%;"></td>
+      <td colspan="2"><input type="number" step="0.01" data-fb-item-campo="${f.id}:${idx}:valor" value="${item.valor||''}" ${comAcoes?'':'disabled'} style="width:100%;"></td>
+      <td colspan="3"><select data-fb-item-campo="${f.id}:${idx}:categoria" ${comAcoes?'':'disabled'}>${CATEGORIAS.map(c=>`<option ${item.categoria===c?'selected':''}>${c}</option>`).join('')}</select></td>
+      <td colspan="2">${comAcoes ? `<button class="danger" data-fb-item-remover="${f.id}:${idx}">Remover item</button>` : ''}</td>
+    </tr>`;
+
   const linhaFatura = (f, comAcoes)=>{
     const alertas = faturabotValidar(f);
     const anexo = f.anexoBase64 ? `<a href="${f.anexoBase64}" target="_blank" title="Ver documento anexado">📎 ${f.anexoNome||'ver'}</a>` : '—';
     const badge = f.status==='Aprovado' ? 'pago' : f.status==='Rejeitado' ? 'atraso' : 'pendente';
-    return `<tr>
+    const itens = faturabotGetItens(f);
+    const total = faturabotTotalItens(f);
+    const categoriasResumo = [...new Set(itens.map(i=>i.categoria))];
+    const resumoTxt = categoriasResumo.length>1 ? `${categoriasResumo.length} categorias` : (categoriasResumo[0]||'—');
+    const linhaPrincipal = `<tr data-fb-linha="${f.id}">
       <td>${f.criado ? f.criado.slice(0,10) : ''}</td>
       <td>${anexo}</td>
       <td><input data-fb-campo="${f.id}:fornecedor" value="${f.fornecedor||''}" placeholder="Fornecedor" style="min-width:130px;"></td>
       <td><input data-fb-campo="${f.id}:nif" value="${f.nif||''}" placeholder="NIF" style="width:110px;"></td>
       <td><input data-fb-campo="${f.id}:nFatura" value="${f.nFatura||''}" placeholder="Nº Fatura" style="width:100px;"></td>
       <td><input type="date" data-fb-campo="${f.id}:data" value="${f.data||''}" style="width:135px;"></td>
-      <td><input type="number" step="0.01" data-fb-campo="${f.id}:valor" value="${f.valor||''}" style="width:110px;"></td>
+      <td class="right"><b>${fmt(total)}</b></td>
       <td><select data-fb-campo="${f.id}:moeda"><option ${f.moeda==='KZ'?'selected':''}>KZ</option><option ${f.moeda==='EUR'?'selected':''}>EUR</option><option ${f.moeda==='USD'?'selected':''}>USD</option></select></td>
-      <td><select data-fb-campo="${f.id}:categoria">${CATEGORIAS.map(c=>`<option ${f.categoria===c?'selected':''}>${c}</option>`).join('')}</select></td>
       <td><select data-fb-campo="${f.id}:conta">${CONTAS.map(c=>`<option value="${c.codigo}" ${f.conta===c.codigo?'selected':''}>${c.nome}</option>`).join('')}</select></td>
+      <td><button type="button" class="sec" data-fb-toggle-itens="${f.id}">🧾 ${resumoTxt} (${itens.length})</button></td>
       <td>${alertas.length ? `<span class="badge atraso" title="${alertas.join(' | ')}">⚠️ ${alertas.length}</span>` : '<span class="badge pago">OK</span>'}</td>
       <td><span class="badge ${badge}">${f.status}</span></td>
       ${comAcoes ? `<td style="white-space:nowrap;">
@@ -481,15 +533,26 @@ function viewFaturabot(){
         <button class="danger" data-fb-apagar="${f.id}">Apagar</button>
       </td>` : `<td><button class="danger" data-fb-apagar="${f.id}">Apagar</button></td>`}
     </tr>`;
+    const aberto = fbItensAbertos.has(f.id);
+    const linhaItens = aberto ? `<tr class="fb-itens-painel" data-fb-painel="${f.id}">
+      <td colspan="13" style="background:#f7f5ef;padding:8px 12px;">
+        <table style="width:100%;"><tbody>
+          ${itens.map((it,idx)=>linhaItemEditavel(f,it,idx,comAcoes)).join('')}
+        </tbody></table>
+        ${comAcoes ? `<button type="button" data-fb-item-add="${f.id}" style="margin-top:6px;">+ Adicionar item</button>` : ''}
+      </td>
+    </tr>` : '';
+    return linhaPrincipal + linhaItens;
   };
 
-  const rowsPendentes = pendentes.map(f=>linhaFatura(f,true)).join('') || `<tr><td colspan="12" class="note">Sem faturas por rever. Envie uma fatura acima para começar.</td></tr>`;
-  const rowsProcessadas = processadas.map(f=>linhaFatura(f,false)).join('') || `<tr><td colspan="12" class="note">Ainda sem faturas aprovadas/rejeitadas.</td></tr>`;
+  const rowsPendentes = pendentes.map(f=>linhaFatura(f,true)).join('') || `<tr><td colspan="13" class="note">Sem faturas por rever. Envie uma fatura acima para começar.</td></tr>`;
+  const rowsProcessadas = processadas.map(f=>linhaFatura(f,false)).join('') || `<tr><td colspan="13" class="note">Ainda sem faturas aprovadas/rejeitadas.</td></tr>`;
 
   return `
   <h2 style="background:var(--azul-nav);">🤖 FaturaBot — Motor Inteligente de Leitura de Faturas de Despesas</h2>
-  <p class="note">Regra "Zero Digitação": envie a fatura (arrastar, escolher ficheiro ou foto) → a IA tenta ler o documento automaticamente e pré-preenche os campos → confirme/corrija → aprove. Ao aprovar, o sistema cria automaticamente o Lançamento e, se marcar, a Conta a Pagar — sem repetir digitação.
-  <br><b>Nota:</b> a leitura automática (OCR) depende do serviço "faturabot-ocr" estar ligado no Supabase (ver instruções). Se não estiver ligado, ou se a leitura falhar, os campos ficam em branco para preencher à mão — o resto do fluxo (sugestão de categoria, validação, aprovação) funciona sempre.</p>
+  <p class="note">Regra "Zero Digitação": envie a fatura (arrastar, escolher ficheiro ou foto) → a IA tenta ler o documento automaticamente e pré-preenche os campos → confirme/corrija → aprove. Ao aprovar, o sistema cria automaticamente o Lançamento (e, se marcar, a Conta a Pagar) — sem repetir digitação.
+  <br><b>Nota:</b> a leitura automática (OCR) depende do serviço "faturabot-ocr" estar ligado no Supabase (ver instruções). Se não estiver ligado, ou se a leitura falhar, os campos ficam em branco para preencher à mão — o resto do fluxo (sugestão de categoria, validação, aprovação) funciona sempre.
+  <br>Uma fatura pode ter <b>várias categorias de despesa</b> ao mesmo tempo (ex.: cimento + combustível + material de escritório). Use "+ Adicionar item" para separar cada parte. A fatura continua a gerar <b>um único Lançamento</b> (um só movimento, uma só conta/forma de pagamento) — quando há mais de uma categoria, esse lançamento fica marcado como "${CATEGORIA_DIVERSOS}" e o detalhe por categoria alimenta os relatórios (Resumo Mensal, Orçamento vs Realizado, DRE) sem duplicar saídas na Tesouraria.</p>
 
   <form class="inline" id="formFaturabot">
     <div class="grid">
@@ -503,28 +566,32 @@ function viewFaturabot(){
       <div><label>Nº Fatura</label><input name="nFatura"></div>
       <div><label>Data da Fatura</label><input type="date" name="data" value="${hoje()}" required></div>
       <div><label>Data de Vencimento</label><input type="date" name="vencimento"></div>
-      <div><label>Valor</label><input type="number" step="0.01" name="valor" required></div>
       <div><label>Moeda</label><select name="moeda"><option>KZ</option><option>EUR</option><option>USD</option></select></div>
+      <div><label>Conta / Forma de Pagamento</label><select name="conta">${CONTAS.map(c=>`<option value="${c.codigo}">${c.nome}</option>`).join('')}</select></div>
       <div><label>Sujeito a IVA?</label><select name="iva"><option>Não</option><option>Sim</option></select></div>
       <div><label>Taxa IVA</label><select name="taxaIVA"><option value="0.14">14%</option><option value="0.07">7%</option><option value="0.05">5%</option><option value="0">0%</option></select></div>
-      <div><label>Categoria <span id="fbSugestaoTag" style="font-weight:normal;"></span></label><select name="categoria" id="fbCategoria">${CATEGORIAS.map(c=>`<option>${c}</option>`).join('')}</select></div>
-      <div><label>Conta / Forma de Pagamento</label><select name="conta" id="fbConta">${CONTAS.map(c=>`<option value="${c.codigo}">${c.nome}</option>`).join('')}</select></div>
       <div><label>Centro Financeiro / Origem</label><select name="origem"><option value="">—</option>${ORIGENS.map(o=>`<option>${o}</option>`).join('')}</select></div>
-      <div style="grid-column:1/-1;"><label>Descrição</label><input name="descricao" placeholder="Ex.: fatura mensal de eletricidade, referência..."></div>
     </div>
+
+    <h3 style="margin:14px 0 6px;">Itens da despesa (por categoria) <span id="fbSugestaoTag" style="font-weight:normal;font-size:12.5px;"></span></h3>
+    <div id="fbItensContainer"></div>
+    <button type="button" id="fbAddItem" style="margin-top:6px;">+ Adicionar item</button>
+    <p style="margin-top:8px;"><b>Total:</b> <span id="fbTotalItens">0,00</span></p>
+
     <div class="actions"><button type="submit">📥 Enviar para o FaturaBot (Aguardando aprovação)</button></div>
-    <p class="note">Ao digitar o Fornecedor, a categoria e conta são sugeridas automaticamente com base em faturas já aprovadas antes (ou em padrões conhecidos como ENDE, EPAL, Unitel, Sonangol). Corrija se necessário — o sistema aprende com a sua correção.</p>
+    <p class="note">Ao digitar o Fornecedor, a categoria do primeiro item é sugerida automaticamente com base em faturas já aprovadas antes (ou em padrões conhecidos como ENDE, EPAL, Unitel, Sonangol). Corrija se necessário — o sistema aprende com a sua correção. Se a fatura tiver várias despesas diferentes, adicione um item por categoria; a conta/forma de pagamento é sempre uma só, para a fatura toda.</p>
   </form>
 
   <h2 class="sub">📋 Aguardando Aprovação (${pendentes.length})</h2>
   <div class="tablewrap">
-    <table><thead><tr><th>Recebido</th><th>Anexo</th><th>Fornecedor</th><th>NIF</th><th>Nº Fatura</th><th>Data</th><th class="right">Valor</th><th>Moeda</th><th>Categoria</th><th>Conta</th><th>Validação</th><th>Estado</th><th></th></tr></thead>
+    <table><thead><tr><th>Recebido</th><th>Anexo</th><th>Fornecedor</th><th>NIF</th><th>Nº Fatura</th><th>Data</th><th class="right">Total</th><th>Moeda</th><th>Conta</th><th>Itens</th><th>Validação</th><th>Estado</th><th></th></tr></thead>
     <tbody>${rowsPendentes}</tbody></table>
   </div>
 
   <h2 class="sub" style="margin-top:18px;">🗂️ Histórico Processado (últimas 50)</h2>
+
   <div class="tablewrap">
-    <table><thead><tr><th>Recebido</th><th>Anexo</th><th>Fornecedor</th><th>NIF</th><th>Nº Fatura</th><th>Data</th><th class="right">Valor</th><th>Moeda</th><th>Categoria</th><th>Conta</th><th>Validação</th><th>Estado</th><th></th></tr></thead>
+    <table><thead><tr><th>Recebido</th><th>Anexo</th><th>Fornecedor</th><th>NIF</th><th>Nº Fatura</th><th>Data</th><th class="right">Total</th><th>Moeda</th><th>Conta</th><th>Itens</th><th>Validação</th><th>Estado</th><th></th></tr></thead>
     <tbody>${rowsProcessadas}</tbody></table>
   </div>`;
 }
@@ -787,7 +854,7 @@ function viewPlanoContas(){
   const totalOrigem = origemReceitas.reduce((s,r)=>s+r.val,0);
   const semOrigem = DB.lancamentos.filter(l=>l.tipo==='Receita'&&!l.origem).reduce((s,l)=>s+valorEmKZ(l),0);
   const saldos = {};
-  DB.lancamentos.forEach(l=>{
+  explodirLancamentos(DB.lancamentos).forEach(l=>{
     const c = contaDe(l.categoria);
     saldos[c.cod] = saldos[c.cod] || {nome:c.nome,tipo:c.tipo,debito:0,credito:0};
     const v = valorEmKZ(l);
@@ -827,7 +894,7 @@ function viewIVA(){
     const dedutivel = doMes.filter(l=>l.tipo==='Despesa'&&l.iva==='Sim').reduce((s,l)=>s+valorEmKZ(l)*Number(l.taxaIVA||0),0);
     const apurado = liquidado-dedutivel;
     acumulado += apurado;
-    const retServicos = doMes.filter(l=>l.tipo==='Despesa'&&l.categoria==='SERVIÇOS DE TERCEIROS').reduce((s,l)=>s+valorEmKZ(l),0)*0.065;
+    const retServicos = explodirLancamentos(doMes).filter(l=>l.tipo==='Despesa'&&l.categoria==='SERVIÇOS DE TERCEIROS').reduce((s,l)=>s+valorEmKZ(l),0)*0.065;
     return `<tr><td>${m}</td><td class="right">${fmt(liquidado)}</td><td class="right">${fmt(dedutivel)}</td><td class="right">${fmt(apurado)}</td><td class="right">${fmt(acumulado)}</td><td class="right">${fmt(retServicos)}</td></tr>`;
   }).join('');
   return `
@@ -905,7 +972,7 @@ function viewExistencias(){
   let inicial = 0, inicialQtd = 0;
   const linhas = MESES.map((m,i)=>{
     const key = `${ano}-${String(i+1).padStart(2,'0')}`;
-    const doMes = DB.lancamentos.filter(l=>mesKey(l.data)===key && l.categoria==='COMPRAS DE MERCADORIAS PARA REVENDA');
+    const doMes = explodirLancamentos(DB.lancamentos.filter(l=>mesKey(l.data)===key)).filter(l=>l.categoria==='COMPRAS DE MERCADORIAS PARA REVENDA');
     const compras = doMes.reduce((s,l)=>s+valorEmKZ(l),0);
     const comprasQtd = doMes.reduce((s,l)=>s+(Number(l.quantidade)||0),0);
     const final = Number(DB.existencias[key]||0);
@@ -935,7 +1002,7 @@ function viewExistencias(){
 /* ---------- Orçamento vs Realizado ---------- */
 function viewOrcamento(){
   const rows = CATEGORIAS.filter(c=>CATEGORIA_CONTA[c] && CATEGORIA_CONTA[c].tipo!=='Neutro').map(cat=>{
-    const realizado = DB.lancamentos.filter(l=>l.categoria===cat && l.tipo==='Despesa').reduce((s,l)=>s+valorEmKZ(l),0);
+    const realizado = explodirLancamentos(DB.lancamentos).filter(l=>l.categoria===cat && l.tipo==='Despesa').reduce((s,l)=>s+valorEmKZ(l),0);
     const orc = Number(DB.orcamento[cat]||0);
     const desvio = realizado-orc;
     const pct = orc>0 ? (realizado/orc*100).toFixed(0)+'%' : '—';
@@ -969,9 +1036,10 @@ function atualizarResumo(){
   const ano=document.getElementById('resAno').value, mes=document.getElementById('resMes').value;
   const key=`${ano}-${mes}`;
   const doMes = DB.lancamentos.filter(l=>mesKey(l.data)===key);
+  const doMesExplodido = explodirLancamentos(doMes);
   const receitasOrigem = ORIGENS.map(o=>({nome:o,val:doMes.filter(l=>l.tipo==='Receita'&&l.origem===o).reduce((s,l)=>s+valorEmKZ(l),0)}));
   const totalReceitas = receitasOrigem.reduce((s,r)=>s+r.val,0);
-  const despesasCat = CATEGORIAS.map(c=>({nome:c,val:doMes.filter(l=>l.tipo==='Despesa'&&l.categoria===c).reduce((s,l)=>s+valorEmKZ(l),0)})).filter(x=>x.val!==0 || true);
+  const despesasCat = CATEGORIAS.map(c=>({nome:c,val:doMesExplodido.filter(l=>l.tipo==='Despesa'&&l.categoria===c).reduce((s,l)=>s+valorEmKZ(l),0)})).filter(x=>x.val!==0 || true);
   const totalDespesas = despesasCat.reduce((s,r)=>s+r.val,0);
   document.getElementById('resumoConteudo').innerHTML = `
     <div><h2 class="sub" style="font-size:16px;">RECEITAS (por Origem — caixa/loja)</h2><table><tbody>
@@ -1038,7 +1106,7 @@ function viewPlanoTesouraria(){
   });
   const linhaCat = (cat)=> MESES.map((m,i)=>{
     const key=`${ano}-${String(i+1).padStart(2,'0')}`;
-    return DB.lancamentos.filter(l=>l.tipo==='Despesa'&&l.categoria===cat&&mesKey(l.data)===key).reduce((s,l)=>s+valorEmKZ(l),0);
+    return explodirLancamentos(DB.lancamentos.filter(l=>l.tipo==='Despesa'&&mesKey(l.data)===key)).filter(l=>l.categoria===cat).reduce((s,l)=>s+valorEmKZ(l),0);
   });
   const header = `<tr><th>Descrição</th>${MESES.map(m=>`<th class="right">${m.slice(3)}</th>`).join('')}</tr>`;
   const recRows = CONTAS.map(c=>{const v=linhaConta(c); return `<tr><td>${c.nome}</td>${v.map(x=>`<td class="right">${fmt(x)}</td>`).join('')}</tr>`;}).join('');
@@ -1211,7 +1279,7 @@ function viewSalarios(){
 /* ---------- DRE simplificada ---------- */
 function viewDRE(){
   const grupos = {};
-  DB.lancamentos.forEach(l=>{
+  explodirLancamentos(DB.lancamentos).forEach(l=>{
     grupos[l.categoria]=grupos[l.categoria]||{Receita:0,Despesa:0};
     grupos[l.categoria][l.tipo]+=Number(l.valor||0);
   });
@@ -1241,16 +1309,56 @@ function viewDRE(){
 function bindEvents(){
   /* FaturaBot */
   const fbForn = document.getElementById('fbFornecedor');
+  const ffb=document.getElementById('formFaturabot');
+  const fbItensContainer = document.getElementById('fbItensContainer');
+
+  /* Itens do formulário de NOVA fatura ficam numa lista em memória (fbItensFormulario),
+     re-renderizada dentro do container sempre que muda — assim suportamos várias
+     categorias de despesa na mesma fatura antes mesmo de ela existir em DB.faturabot. */
+  const renderItensFormulario = ()=>{
+    if(!fbItensContainer) return;
+    fbItensContainer.innerHTML = fbItensFormulario.map((it,idx)=>`
+      <div class="grid" style="grid-template-columns:2fr 1fr 2fr auto;gap:8px;align-items:end;margin-bottom:6px;">
+        <div><label>Descrição do item</label><input data-fbf-campo="${idx}:descricao" value="${(it.descricao||'').replace(/"/g,'&quot;')}" placeholder="Ex.: cimento, combustível..."></div>
+        <div><label>Valor</label><input type="number" step="0.01" data-fbf-campo="${idx}:valor" value="${it.valor||''}"></div>
+        <div><label>Categoria</label><select data-fbf-campo="${idx}:categoria">${CATEGORIAS.map(c=>`<option ${it.categoria===c?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div>${fbItensFormulario.length>1 ? `<button type="button" data-fbf-remover="${idx}">Remover</button>` : ''}</div>
+      </div>`).join('');
+    fbItensContainer.querySelectorAll('[data-fbf-campo]').forEach(el=>{
+      const [idx,campo] = el.dataset.fbfCampo.split(':');
+      el.onchange = ()=>{ fbItensFormulario[idx][campo] = el.value; if(campo==='valor') atualizarTotalFormulario(); };
+    });
+    fbItensContainer.querySelectorAll('[data-fbf-remover]').forEach(b=>b.onclick=()=>{
+      fbItensFormulario.splice(Number(b.dataset.fbfRemover),1); renderItensFormulario(); atualizarTotalFormulario();
+    });
+    atualizarTotalFormulario();
+  };
+  const atualizarTotalFormulario = ()=>{
+    const total = fbItensFormulario.reduce((s,i)=>s+(Number(i.valor)||0),0);
+    const span = document.getElementById('fbTotalItens');
+    if(span) span.textContent = fmt(total);
+  };
+  if(fbItensContainer){
+    if(fbItensFormulario.length===0) fbItensFormulario.push({descricao:'', valor:'', categoria:CATEGORIAS[0]});
+    renderItensFormulario();
+  }
+  const fbAddItemBtn = document.getElementById('fbAddItem');
+  if(fbAddItemBtn) fbAddItemBtn.onclick = ()=>{
+    fbItensFormulario.push({descricao:'', valor:'', categoria:CATEGORIAS[0]});
+    renderItensFormulario();
+  };
+
   if(fbForn) fbForn.oninput=()=>{
     const sug = faturabotSugestao(fbForn.value, '');
     const tag = document.getElementById('fbSugestaoTag');
-    if(sug){
-      document.getElementById('fbCategoria').value = sug.categoria;
-      if(sug.conta) document.getElementById('fbConta').value = sug.conta;
-      tag.textContent = `— sugerido (${sug.origemSugestao})`;
-    } else tag.textContent = '';
+    if(sug && fbItensFormulario[0]){
+      fbItensFormulario[0].categoria = sug.categoria;
+      if(sug.conta && ffb && ffb.elements.conta) ffb.elements.conta.value = sug.conta;
+      renderItensFormulario();
+      tag.textContent = `— 1º item sugerido (${sug.origemSugestao})`;
+    } else if(tag) tag.textContent = '';
   };
-  const ffb=document.getElementById('formFaturabot');
+
   const fbArquivo=document.getElementById('fbArquivo');
   if(fbArquivo) fbArquivo.onchange=async()=>{
     const arquivo = fbArquivo.files[0];
@@ -1269,10 +1377,25 @@ function bindEvents(){
           const c = data.campos;
           const set=(campo,val)=>{ if(val!==undefined && val!==null && val!=='' && ffb.elements[campo]) ffb.elements[campo].value = val; };
           set('fornecedor', c.fornecedor); set('nif', c.nif); set('nFatura', c.nFatura);
-          set('data', c.data); set('vencimento', c.vencimento); set('valor', c.valor);
-          set('moeda', c.moeda); set('iva', c.iva); set('taxaIVA', c.taxaIVA); set('descricao', c.descricao);
+          set('data', c.data); set('vencimento', c.vencimento);
+          set('moeda', c.moeda); set('iva', c.iva); set('taxaIVA', c.taxaIVA);
+          /* A IA pode devolver "itens" (várias despesas na mesma fatura) ou só um valor/descrição total.
+             A conta/forma de pagamento é sempre uma só, ao nível da fatura. */
+          const sugConta = faturabotSugestao(c.fornecedor, '');
+          if(sugConta && sugConta.conta && ffb.elements.conta) ffb.elements.conta.value = sugConta.conta;
+          if(Array.isArray(c.itens) && c.itens.length){
+            fbItensFormulario.length = 0;
+            c.itens.forEach(it=>{
+              const sug = faturabotSugestao(c.fornecedor, it.descricao) || {};
+              fbItensFormulario.push({descricao:it.descricao||'', valor:it.valor||'', categoria:it.categoriaSugerida||sug.categoria||CATEGORIAS[0]});
+            });
+          } else if(c.valor){
+            fbItensFormulario.length = 0;
+            fbItensFormulario.push({descricao:c.descricao||'', valor:c.valor, categoria:CATEGORIAS[0]});
+          }
+          renderItensFormulario();
           if(fbForn) fbForn.oninput();
-          if(tag) tag.textContent = '✅ Documento lido pela IA — confira os campos antes de enviar.';
+          if(tag) tag.textContent = '✅ Documento lido pela IA — confira os campos e itens antes de enviar.';
           toast('Documento lido automaticamente. Confira os campos.');
         } else {
           if(tag) tag.textContent = '⚠️ Não consegui ler automaticamente — preencha os campos manualmente.';
@@ -1289,11 +1412,15 @@ function bindEvents(){
     const arquivo = document.getElementById('fbArquivo').files[0];
     const novo = Object.fromEntries(new FormData(ffb).entries());
     novo.taxaIVA = Number(novo.taxaIVA||0);
+    novo.itens = fbItensFormulario.map(it=>({descricao:it.descricao||'', valor:Number(it.valor)||0, categoria:it.categoria}));
+    novo.valor = novo.itens.reduce((s,i)=>s+i.valor,0);
+    if(!novo.valor){ toast('Preencha o valor de pelo menos um item da fatura.'); return; }
     novo.id=uid(); novo.criado=new Date().toISOString(); novo.status='Pendente';
     const gravar=async()=>{
       DB.faturabot.push(novo);
-      logar('FaturaBot: fatura recebida', `${novo.fornecedor} — ${fmt(novo.valor)} ${novo.moeda}`);
-      await saveDB(); toast('Fatura enviada para o FaturaBot — aguardando aprovação.'); ffb.reset(); render();
+      logar('FaturaBot: fatura recebida', `${novo.fornecedor} — ${fmt(novo.valor)} ${novo.moeda} (${novo.itens.length} item(ns))`);
+      await saveDB(); toast('Fatura enviada para o FaturaBot — aguardando aprovação.'); ffb.reset();
+      fbItensFormulario.length = 0; render();
     };
     if(arquivo){
       const leitor = new FileReader();
@@ -1306,25 +1433,73 @@ function bindEvents(){
     const f = DB.faturabot.find(x=>x.id===id);
     if(f){ f[campo]=el.value; await saveDB(); }
   });
+  document.querySelectorAll('[data-fb-toggle-itens]').forEach(b=>b.onclick=()=>{
+    const id = b.dataset.fbToggleItens;
+    if(fbItensAbertos.has(id)) fbItensAbertos.delete(id); else fbItensAbertos.add(id);
+    render();
+  });
+  document.querySelectorAll('[data-fb-item-campo]').forEach(el=>{
+    const handler = async()=>{
+      const [id,idx,campo] = el.dataset.fbItemCampo.split(':');
+      const f = DB.faturabot.find(x=>x.id===id);
+      if(!f) return;
+      const itens = faturabotGetItens(f);
+      itens[idx][campo] = campo==='valor' ? Number(el.value)||0 : el.value;
+      f.itens = itens; f.valor = faturabotTotalItens(f);
+      await saveDB(); render();
+    };
+    el.onchange = handler;
+  });
+  document.querySelectorAll('[data-fb-item-add]').forEach(b=>b.onclick=async()=>{
+    const f = DB.faturabot.find(x=>x.id===b.dataset.fbItemAdd);
+    if(!f) return;
+    const itens = faturabotGetItens(f);
+    itens.push({descricao:'', valor:0, categoria:CATEGORIAS[0]});
+    f.itens = itens; f.valor = faturabotTotalItens(f);
+    await saveDB(); render();
+  });
+  document.querySelectorAll('[data-fb-item-remover]').forEach(b=>b.onclick=async()=>{
+    const [id,idx] = b.dataset.fbItemRemover.split(':');
+    const f = DB.faturabot.find(x=>x.id===id);
+    if(!f) return;
+    const itens = faturabotGetItens(f);
+    if(itens.length<=1){ toast('A fatura precisa de pelo menos um item.'); return; }
+    itens.splice(Number(idx),1);
+    f.itens = itens; f.valor = faturabotTotalItens(f);
+    await saveDB(); render();
+  });
   document.querySelectorAll('[data-fb-aprovar]').forEach(b=>b.onclick=async()=>{
     const f = DB.faturabot.find(x=>x.id===b.dataset.fbAprovar);
     if(!f) return;
     const alertas = faturabotValidar(f);
     if(alertas.length && !confirm('Esta fatura tem alertas de validação:\n\n'+alertas.join('\n')+'\n\nAprovar mesmo assim?')) return;
     f.status='Aprovado';
-    const lanc = {id:uid(), data:f.data, tipo:'Despesa', origem:f.origem||'', categoria:f.categoria, conta:f.conta,
-      entidade:f.fornecedor, nFatura:f.nFatura, valor:f.valor, moeda:f.moeda, iva:f.iva, taxaIVA:f.taxaIVA, descricao:f.descricao||`FaturaBot: ${f.fornecedor}`};
+    const itens = faturabotGetItens(f);
+    const total = faturabotTotalItens(f);
+    /* Um único Lançamento por fatura — é um único movimento de uma só conta.
+       Com uma categoria só, o lançamento fica nessa categoria normalmente.
+       Com várias categorias, o lançamento fica marcado como "DIVERSOS" e
+       carrega o detalhe por categoria em itensDetalhe — os relatórios por
+       categoria (Resumo Mensal, Orçamento, DRE) usam esse detalhe (via
+       explodirLancamentos) para contar cada parte certa, sem fragmentar
+       a Tesouraria em várias saídas de dinheiro para a mesma fatura. */
+    const multiCategoria = itens.length>1;
+    const lanc = {id:uid(), data:f.data, tipo:'Despesa', origem:f.origem||'', conta:f.conta,
+      entidade:f.fornecedor, nFatura:f.nFatura, valor:total, moeda:f.moeda, iva:f.iva, taxaIVA:f.taxaIVA,
+      categoria: multiCategoria ? CATEGORIA_DIVERSOS : itens[0].categoria,
+      descricao: multiCategoria ? (f.descricao || `FaturaBot: ${f.fornecedor} (${itens.length} categorias)`) : (itens[0].descricao || f.descricao || `FaturaBot: ${f.fornecedor}`)};
+    if(multiCategoria) lanc.itensDetalhe = itens.map(it=>({descricao:it.descricao, valor:it.valor, categoria:it.categoria}));
     DB.lancamentos.push(lanc);
     if(f.vencimento){
-      DB.contasPagar.push({id:uid(), entidade:f.fornecedor, descricao:f.descricao||f.nFatura||'', vencimento:f.vencimento, valor:f.valor, status:'Pendente'});
+      DB.contasPagar.push({id:uid(), entidade:f.fornecedor, descricao:f.descricao||f.nFatura||'', vencimento:f.vencimento, valor:total, status:'Pendente'});
     }
     faturabotAprender(f);
-    logar('FaturaBot: fatura aprovada e integrada', `${f.fornecedor} — ${fmt(f.valor)} ${f.moeda} → Lançamentos${f.vencimento?' + Contas a Pagar':''}`);
+    logar('FaturaBot: fatura aprovada e integrada', `${f.fornecedor} — ${fmt(total)} ${f.moeda}${multiCategoria?` (${itens.length} categorias — 1 lançamento)`:''} → Lançamentos${f.vencimento?' + Contas a Pagar':''}`);
     await saveDB(); toast('Fatura aprovada e integrada em Lançamentos.'); render();
   });
   document.querySelectorAll('[data-fb-rejeitar]').forEach(b=>b.onclick=async()=>{
     const f = DB.faturabot.find(x=>x.id===b.dataset.fbRejeitar);
-    if(f){ f.status='Rejeitado'; logar('FaturaBot: fatura rejeitada', `${f.fornecedor} — ${fmt(f.valor)} ${f.moeda}`); await saveDB(); render(); }
+    if(f){ f.status='Rejeitado'; logar('FaturaBot: fatura rejeitada', `${f.fornecedor} — ${fmt(faturabotTotalItens(f))} ${f.moeda}`); await saveDB(); render(); }
   });
   document.querySelectorAll('[data-fb-apagar]').forEach(b=>b.onclick=async()=>{
     DB.faturabot = DB.faturabot.filter(x=>x.id!==b.dataset.fbApagar); await saveDB(); render();
