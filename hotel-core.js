@@ -63,17 +63,32 @@ let DBHotel = {
     // {id, dataIni, dataFim, nome, multiplicador (ex: 1.5 para high season)}
   ],
   canais: [
-    {id:'direto', nome:'Direto', comissao:0},
+    {id:'direto', nome:'Direto (balcão)', comissao:0},
+    {id:'telefone', nome:'Telefone', comissao:0},
+    {id:'email', nome:'E-mail', comissao:0},
     {id:'booking', nome:'Booking.com', comissao:15},
+    {id:'airbnb', nome:'Airbnb', comissao:15},
+    {id:'expedia', nome:'Expedia', comissao:18},
     {id:'agencia', nome:'Agência', comissao:20}
   ],
   cupons: [
     // {id, codigo, desconto%, dataExp, usos_max, usos_atuais}
   ],
   hospedes: [],
-  estadias: []
+  estadias: [],
+  folio: [],
+  faturas: [],
+  reservasCanalExterno: [],
+  configCanais: {
+    icalImportUrls: []
+    // {id, canalId, nome, url}
+  }
   // hospedes: [{id, nome, documento, contacto, email, morada, pais, notas, dataPrimeira, totalEstadias, fidelizacao}]
   // estadias: [{id, hospedeId, checkinReal, checkoutReal, quartoId, taxaRef, notas, faturaRef}]
+  // folio: [{id, reservaId, data, tipo:'consumo'|'extra'|'desconto'|'sinal'|'pagamento', descricao, categoria, valor, formaPagamento}]
+  //   valor > 0 = a débito do hóspede (consumo/extra); valor negativo/'pagamento'/'sinal' reduz o saldo em aberto
+  // faturas: [{id, reservaId, numero, itens:[{descricao,valor}], total, formaPagamento, dataEmissao, lancamentoId}]
+  // reservasCanalExterno: [{id, canalId, uid, quartoId, checkinPrevisto, checkoutPrevisto, hospedeNome, origemUrl}]
 };
 
 let versaoHotel = null;
@@ -102,7 +117,11 @@ async function carregarDadosHotel(){
       return;
     }
 
-    DBHotel = Object.assign({tiposQuarto:[],quartos:[],reservas:[],bloqueios:[]}, data.data || {});
+    DBHotel = Object.assign({tiposQuarto:[],quartos:[],reservas:[],bloqueios:[],hospedes:[],estadias:[],folio:[],faturas:[],reservasCanalExterno:[],configCanais:{icalImportUrls:[]}}, data.data || {});
+    if(!DBHotel.folio) DBHotel.folio = [];
+    if(!DBHotel.faturas) DBHotel.faturas = [];
+    if(!DBHotel.reservasCanalExterno) DBHotel.reservasCanalExterno = [];
+    if(!DBHotel.configCanais) DBHotel.configCanais = {icalImportUrls:[]};
     versaoHotel = data.versao || 1;
   }catch(e){
     console.warn('Erro ao carregar dados de hotelaria:', e);
@@ -371,4 +390,295 @@ async function gerarLancamentoReceitaHotel(reserva, valor, descricao){
     valor: valor,
     tipo: 'receita'
   });
+}
+
+/* ============================================================
+   CONTA CORRENTE DO HÓSPEDE (FOLIO) — consumos, extras, sinais
+   ============================================================ */
+
+/* Adiciona um lançamento ao folio de uma reserva.
+   tipo: 'consumo' | 'extra' | 'desconto' | 'sinal' | 'pagamento'
+   Convenção: consumo/extra somam ao saldo devedor; desconto/sinal/pagamento reduzem. */
+function adicionarFolioHotel(reservaId, {tipo, descricao, categoria='', valor, formaPagamento=''}){
+  const item = {
+    id: uidHotel(),
+    reservaId,
+    data: new Date().toISOString().slice(0,10),
+    tipo,
+    descricao,
+    categoria,
+    valor: Number(valor)||0,
+    formaPagamento
+  };
+  DBHotel.folio.push(item);
+  return item;
+}
+
+function removerFolioHotel(folioId){
+  DBHotel.folio = DBHotel.folio.filter(f => f.id !== folioId);
+}
+
+function listarFolioReservaHotel(reservaId){
+  return DBHotel.folio.filter(f => f.reservaId === reservaId).sort((a,b)=> a.data.localeCompare(b.data));
+}
+
+/* Total consumido em Extras/Consumos (não inclui a diária da reserva) */
+function totalExtrasFolioHotel(reservaId){
+  return listarFolioReservaHotel(reservaId)
+    .filter(f => f.tipo === 'consumo' || f.tipo === 'extra')
+    .reduce((s,f)=> s + f.valor, 0);
+}
+
+/* Total já pago/abatido (sinais + pagamentos + descontos) */
+function totalPagoFolioHotel(reservaId){
+  return listarFolioReservaHotel(reservaId)
+    .filter(f => f.tipo === 'sinal' || f.tipo === 'pagamento' || f.tipo === 'desconto')
+    .reduce((s,f)=> s + f.valor, 0);
+}
+
+/* Saldo em aberto da conta corrente = diária da reserva + extras/consumos − pago/descontos */
+function calcularSaldoFolioHotel(reservaId){
+  const reserva = DBHotel.reservas.find(r => r.id === reservaId);
+  const base = reserva ? (reserva.totalReserva || 0) : 0;
+  return base + totalExtrasFolioHotel(reservaId) - totalPagoFolioHotel(reservaId);
+}
+
+/* ============================================================
+   FATURAÇÃO / SPLIT DE CONTAS — várias faturas para 1 reserva
+   ============================================================ */
+
+/* Gera N "faturas" (documentos de cobrança internos) para a mesma reserva,
+   cada uma com os seus próprios itens, e lança cada uma na Tesouraria via
+   adicionarLancamentoPartilhado (core.js), mantendo o registo em DBHotel.faturas.
+   divisoes: [{ itens:[{descricao,valor}], formaPagamento, unidade }] */
+async function gerarFaturasSplitHotel(reservaId, divisoes){
+  const reserva = DBHotel.reservas.find(r => r.id === reservaId);
+  if(!reserva) return {ok:false, msg:'Reserva não encontrada'};
+
+  const geradas = [];
+  for(const div of divisoes){
+    const total = (div.itens||[]).reduce((s,i)=> s + (Number(i.valor)||0), 0);
+    if(total <= 0) continue;
+    const numero = `FL-${reserva.quartoId}-${Date.now().toString(36).slice(-5)}-${geradas.length+1}`;
+    const fatura = {
+      id: uidHotel(),
+      reservaId,
+      numero,
+      itens: div.itens,
+      total,
+      formaPagamento: div.formaPagamento || 'Cash',
+      dataEmissao: new Date().toISOString().slice(0,10),
+      lancamentoId: null
+    };
+
+    if(typeof adicionarLancamentoPartilhado === 'function'){
+      const desc = (div.itens||[]).map(i=>i.descricao).join(', ');
+      const resultado = await adicionarLancamentoPartilhado({
+        id: uidHotel(),
+        data: fatura.dataEmissao,
+        categoria: 'Hotelaria - Alojamento',
+        descricao: `${fatura.numero} — ${reserva.hospedeNome} (Qt.${reserva.quartoId}): ${desc}`,
+        valor: total,
+        tipo: 'receita',
+        formaPagamento: fatura.formaPagamento,
+        unidade: div.unidade || 'ZOOM\'S LODGE'
+      });
+      fatura.lancamentoId = fatura.id;
+      if(resultado && resultado.ok === false){
+        toastHotel(`Aviso: fatura ${numero} registada localmente, mas o lançamento na Tesouraria falhou.`);
+      }
+    } else {
+      toastHotel('Tesouraria (core.js) não está ligada — faturas guardadas só localmente.');
+    }
+
+    DBHotel.faturas.push(fatura);
+    geradas.push(fatura);
+  }
+
+  await saveDBHotel();
+  return {ok:true, faturas:geradas};
+}
+
+function listarFaturasReservaHotel(reservaId){
+  return DBHotel.faturas.filter(f => f.reservaId === reservaId);
+}
+
+/* ============================================================
+   CANAIS E DISTRIBUIÇÃO
+   ------------------------------------------------------------
+   Nota honesta sobre limites técnicos: uma ligação em tempo real
+   a Booking.com, Airbnb ou Expedia (channel manager "verdadeiro")
+   exige contas de parceiro certificadas nessas plataformas, com
+   credenciais/API própria e normalmente um servidor backend — não
+   é algo que uma página HTML estática consiga fazer sozinha.
+   O que ESTE módulo oferece, de forma realista e sem custos:
+   1) Registo manual de reservas vindas por telefone/e-mail
+      (já coberto pelo formulário de Nova Reserva, canal "Direto").
+   2) Exportação de um calendário iCal (.ics) com os quartos
+      ocupados, para colares no "Sincronizar calendários" do
+      Booking/Airbnb/Expedia — evita overbooking.
+   3) Importação de feeds iCal (.ics) que essas plataformas
+      disponibilizam, criando Bloqueios automáticos nos quartos
+      correspondentes, para essas reservas externas também
+      aparecerem aqui como indisponíveis.
+   ============================================================ */
+
+/* Gera o conteúdo .ics com os períodos ocupados (reservas + bloqueios) */
+function gerarICalHotel(){
+  const linhas = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//ZoomsLodge//Hotelaria//PT'
+  ];
+  const fmt = (d) => d.replace(/-/g,'');
+
+  DBHotel.reservas.filter(r => r.estado !== 'cancelada').forEach(r => {
+    linhas.push('BEGIN:VEVENT');
+    linhas.push(`UID:${r.id}@zoomslodge`);
+    linhas.push(`DTSTART;VALUE=DATE:${fmt(r.checkinPrevisto)}`);
+    linhas.push(`DTEND;VALUE=DATE:${fmt(r.checkoutPrevisto)}`);
+    linhas.push(`SUMMARY:Ocupado — Qt.${r.quartoId} (${r.hospedeNome||'reserva'})`);
+    linhas.push('END:VEVENT');
+  });
+
+  DBHotel.bloqueios.forEach(b => {
+    linhas.push('BEGIN:VEVENT');
+    linhas.push(`UID:${b.id}@zoomslodge`);
+    linhas.push(`DTSTART;VALUE=DATE:${fmt(b.dataIni)}`);
+    linhas.push(`DTEND;VALUE=DATE:${fmt(b.dataFim)}`);
+    linhas.push(`SUMMARY:Bloqueado — Qt.${b.quartoId} (${b.motivo||'manutenção'})`);
+    linhas.push('END:VEVENT');
+  });
+
+  linhas.push('END:VCALENDAR');
+  return linhas.join('\r\n');
+}
+
+function baixarICalHotel(){
+  const conteudo = gerarICalHotel();
+  const blob = new Blob([conteudo], {type:'text/calendar'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `zoomslodge-ocupacao-${new Date().toISOString().slice(0,10)}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/* Faz o parse simples de um ficheiro .ics (texto) e devolve os eventos
+   [{uid, dataIni, dataFim, resumo}] — suficiente para feeds padrão de
+   disponibilidade do Booking/Airbnb/Expedia. */
+function parseICalHotel(textoIcs){
+  const eventos = [];
+  const blocos = textoIcs.split('BEGIN:VEVENT').slice(1);
+  blocos.forEach(bloco => {
+    const uid = (bloco.match(/UID:([^\r\n]+)/)||[])[1] || uidHotel();
+    const dtStart = (bloco.match(/DTSTART[^:]*:([^\r\n]+)/)||[])[1];
+    const dtEnd = (bloco.match(/DTEND[^:]*:([^\r\n]+)/)||[])[1];
+    const resumo = (bloco.match(/SUMMARY:([^\r\n]+)/)||[])[1] || '';
+    const paraData = (v) => v ? `${v.slice(0,4)}-${v.slice(4,6)}-${v.slice(6,8)}` : null;
+    if(dtStart && dtEnd){
+      eventos.push({uid, dataIni: paraData(dtStart), dataFim: paraData(dtEnd), resumo});
+    }
+  });
+  return eventos;
+}
+
+/* Importa um feed iCal externo (ex.: Booking.com) e cria Bloqueios
+   correspondentes no quarto indicado, para nunca haver overbooking. */
+function importarICalHotel(textoIcs, canalId, quartoId){
+  const eventos = parseICalHotel(textoIcs);
+  let criados = 0;
+  eventos.forEach(ev => {
+    if(!ev.dataIni || !ev.dataFim) return;
+    const jaExiste = DBHotel.bloqueios.some(b => b.origemUid === ev.uid);
+    if(jaExiste) return;
+    DBHotel.bloqueios.push({
+      id: uidHotel(),
+      quartoId,
+      dataIni: ev.dataIni,
+      dataFim: ev.dataFim,
+      motivo: `Reserva externa (${canalId}) — ${ev.resumo}`,
+      origemUid: ev.uid,
+      origemCanal: canalId
+    });
+    criados++;
+  });
+  return {ok:true, criados, total: eventos.length};
+}
+
+/* ============================================================
+   RELATÓRIOS — Ocupação, ADR, RevPAR, Forecast, Chegadas/Partidas
+   ============================================================ */
+
+function listarDatasEntre(dataIni, dataFim){
+  const datas = [];
+  let d = new Date(dataIni);
+  const fim = new Date(dataFim);
+  while(d < fim){
+    datas.push(d.toISOString().slice(0,10));
+    d.setDate(d.getDate()+1);
+  }
+  return datas;
+}
+
+/* Taxa de ocupação diária e média do período */
+function relatorioOcupacaoHotel(dataIni, dataFim){
+  const totalQuartos = DBHotel.quartos.length || 1;
+  const dias = listarDatasEntre(dataIni, dataFim);
+  const porDia = dias.map(dataStr => {
+    const ocupacao = getOcupacaoHotel(dataStr);
+    const ocupados = Object.values(ocupacao).filter(o => o.estado !== 'livre').length;
+    return {data: dataStr, ocupados, totalQuartos, taxa: totalQuartos ? (ocupados/totalQuartos*100) : 0};
+  });
+  const mediaOcupados = porDia.reduce((s,d)=>s+d.ocupados,0) / (porDia.length||1);
+  const taxaMedia = totalQuartos ? (mediaOcupados/totalQuartos*100) : 0;
+  return {porDia, taxaMedia, totalQuartos};
+}
+
+/* ADR (Tarifa Média Diária) = Receita de alojamento / Noites vendidas
+   RevPAR = Receita de alojamento / (Quartos disponíveis x dias do período) */
+function relatorioADRRevPARHotel(dataIni, dataFim){
+  const totalQuartos = DBHotel.quartos.length || 1;
+  const dias = listarDatasEntre(dataIni, dataFim).length || 1;
+
+  const reservasNoPeriodo = DBHotel.reservas.filter(r =>
+    r.estado !== 'cancelada' &&
+    !(r.checkoutPrevisto <= dataIni || r.checkinPrevisto >= dataFim)
+  );
+
+  let receitaTotal = 0;
+  let noitesVendidas = 0;
+  reservasNoPeriodo.forEach(r => {
+    const ini = r.checkinPrevisto < dataIni ? dataIni : r.checkinPrevisto;
+    const fim = r.checkoutPrevisto > dataFim ? dataFim : r.checkoutPrevisto;
+    const noites = Math.max(0, calcularNoitesHotel(ini, fim));
+    noitesVendidas += noites;
+    const noitesTotais = Math.max(1, calcularNoitesHotel(r.checkinPrevisto, r.checkoutPrevisto));
+    receitaTotal += (r.totalReserva || 0) * (noites / noitesTotais);
+  });
+
+  const adr = noitesVendidas ? (receitaTotal / noitesVendidas) : 0;
+  const revpar = (totalQuartos * dias) ? (receitaTotal / (totalQuartos * dias)) : 0;
+
+  return {receitaTotal: Math.round(receitaTotal), noitesVendidas, adr: Math.round(adr), revpar: Math.round(revpar), totalQuartos, dias};
+}
+
+/* Previsão de ocupação para os próximos N dias, com base nas reservas
+   já confirmadas/garantidas/provisórias (não cancelada) */
+function relatorioForecastHotel(diasFrente=14){
+  const hoje = new Date().toISOString().slice(0,10);
+  const fim = new Date();
+  fim.setDate(fim.getDate() + diasFrente);
+  return relatorioOcupacaoHotel(hoje, fim.toISOString().slice(0,10));
+}
+
+/* Chegadas e partidas previstas para uma data específica (default: hoje) */
+function relatorioChegadasPartidasHotel(dataStr){
+  const data = dataStr || new Date().toISOString().slice(0,10);
+  const chegadas = DBHotel.reservas.filter(r => r.checkinPrevisto === data && r.estado !== 'cancelada');
+  const partidas = DBHotel.reservas.filter(r => r.checkoutPrevisto === data && r.estado !== 'cancelada');
+  return {data, chegadas, partidas};
 }
