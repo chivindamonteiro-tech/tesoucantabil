@@ -28,7 +28,7 @@ function uidHotel(){
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 }
 
-function toastHotel(msg){
+function toastHotel(msg, tipo='info'){
   let el = document.getElementById('toastBoxHotel');
   if(!el){
     el = document.createElement('div');
@@ -51,7 +51,29 @@ let DBHotel = {
     {id:'fam', nome:'Familiar', capacidade:4, precoBase:35000}
   ],
   quartos: [],
-  reservas: []
+  reservas: [],
+  bloqueios: [],
+  planosTarifarios: [
+    {id:'rack', nome:'Rack Rate', desconto:0},
+    {id:'corp', nome:'Corporate', desconto:10},
+    {id:'promo', nome:'Promocional', desconto:15},
+    {id:'pacote', nome:'Pacote', desconto:20}
+  ],
+  sazonalidade: [
+    // {id, dataIni, dataFim, nome, multiplicador (ex: 1.5 para high season)}
+  ],
+  canais: [
+    {id:'direto', nome:'Direto', comissao:0},
+    {id:'booking', nome:'Booking.com', comissao:15},
+    {id:'agencia', nome:'Agência', comissao:20}
+  ],
+  cupons: [
+    // {id, codigo, desconto%, dataExp, usos_max, usos_atuais}
+  ],
+  hospedes: [],
+  estadias: []
+  // hospedes: [{id, nome, documento, contacto, email, morada, pais, notas, dataPrimeira, totalEstadias, fidelizacao}]
+  // estadias: [{id, hospedeId, checkinReal, checkoutReal, quartoId, taxaRef, notas, faturaRef}]
 };
 
 let versaoHotel = null;
@@ -80,7 +102,7 @@ async function carregarDadosHotel(){
       return;
     }
 
-    DBHotel = Object.assign({tiposQuarto:[],quartos:[],reservas:[]}, data.data || {});
+    DBHotel = Object.assign({tiposQuarto:[],quartos:[],reservas:[],bloqueios:[]}, data.data || {});
     versaoHotel = data.versao || 1;
   }catch(e){
     console.warn('Erro ao carregar dados de hotelaria:', e);
@@ -134,13 +156,199 @@ async function saveDBHotel(tentativas = 3){
   }
 }
 
-/* ---------- lógica de reservas ---------- */
+/* ---------- lógica de disponibilidade e bloqueios ---------- */
 function quartoOcupadoHotel(quartoId, checkin, checkout){
-  return DBHotel.reservas.some(r =>
+  // Verifica reservas confirmadas/provisórias
+  const temReserva = DBHotel.reservas.some(r =>
     r.quartoId === quartoId &&
     r.estado !== 'cancelada' &&
     !(checkout <= r.checkinPrevisto || checkin >= r.checkoutPrevisto)
   );
+  
+  // Verifica bloqueios (manutenção, limpeza, VIP)
+  const temBloqueio = DBHotel.bloqueios.some(b =>
+    b.quartoId === quartoId &&
+    !(checkout <= b.dataIni || checkin >= b.dataFim)
+  );
+  
+  return temReserva || temBloqueio;
+}
+
+function getQuartosDisponivelHotel(tipoId, checkin, checkout){
+  return DBHotel.quartos.filter(q => 
+    q.tipoId === tipoId && !quartoOcupadoHotel(q.id, checkin, checkout)
+  );
+}
+
+function getOcupacaoHotel(data){
+  // Retorna {quartoId: {estado, reservaId}} para uma data específica
+  const ocupacao = {};
+  
+  DBHotel.quartos.forEach(q => {
+    ocupacao[q.id] = {estado: 'livre', id: null};
+  });
+  
+  DBHotel.bloqueios.forEach(b => {
+    if(data >= b.dataIni && data < b.dataFim){
+      ocupacao[b.quartoId] = {estado: 'bloqueado', id: b.id};
+    }
+  });
+  
+  DBHotel.reservas.forEach(r => {
+    if(r.estado !== 'cancelada' && data >= r.checkinPrevisto && data < r.checkoutPrevisto){
+      ocupacao[r.quartoId] = {estado: r.estado, id: r.id};
+    }
+  });
+  
+  return ocupacao;
+}
+
+function calcularNoitesHotel(dataIni, dataFim){
+  const cin = new Date(dataIni);
+  const cout = new Date(dataFim);
+  return Math.round((cout - cin) / 86400000);
+}
+
+/* ---------- Tarifação Dinâmica ---------- */
+function getMultiplicadorSazonalidade(data){
+  // Retorna multiplicador de preço para uma data
+  const d = new Date(data);
+  const encontrado = DBHotel.sazonalidade.find(s => {
+    const ini = new Date(s.dataIni);
+    const fim = new Date(s.dataFim);
+    return d >= ini && d <= fim;
+  });
+  return encontrado ? encontrado.multiplicador : 1.0;
+}
+
+function calcularTarifaNoiteHotel(tipoId, data, planoId, canalId){
+  // Calcula tarifa de 1 noite com sazonalidade, plano e canal
+  const tipo = DBHotel.tiposQuarto.find(t => t.id === tipoId);
+  if(!tipo) return 0;
+  
+  const plano = DBHotel.planosTarifarios.find(p => p.id === planoId) || DBHotel.planosTarifarios[0];
+  const sazonalidade = getMultiplicadorSazonalidade(data);
+  
+  // Preço base com sazonalidade
+  let preco = tipo.precoBase * sazonalidade;
+  
+  // Aplicar desconto do plano tarifário
+  preco = preco * (1 - plano.desconto / 100);
+  
+  return Math.round(preco);
+}
+
+function calcularTotalReservaHotel(tipoId, dataIni, dataFim, planoId, canalId, descontoAdicional=0, cupomId=null){
+  // Calcula total com todas as variáveis
+  const noites = calcularNoitesHotel(dataIni, dataFim);
+  let total = 0;
+  
+  // Somar tarifa de cada noite (sazonalidade pode variar por dia)
+  let d = new Date(dataIni);
+  for(let i = 0; i < noites; i++){
+    const dataStr = d.toISOString().split('T')[0];
+    total += calcularTarifaNoiteHotel(tipoId, dataStr, planoId, canalId);
+    d.setDate(d.getDate() + 1);
+  }
+  
+  // Aplicar desconto adicional (percentual)
+  if(descontoAdicional > 0){
+    total = total * (1 - descontoAdicional / 100);
+  }
+  
+  // Aplicar cupom se fornecido
+  if(cupomId){
+    const cupom = DBHotel.cupons.find(c => c.id === cupomId);
+    if(cupom && cupom.usos_atuais < cupom.usos_max){
+      const descCupom = (total * cupom.desconto) / 100;
+      total -= descCupom;
+      cupom.usos_atuais = (cupom.usos_atuais || 0) + 1;
+    }
+  }
+  
+  return Math.round(total);
+}
+
+function validarCupomHotel(codigo){
+  // Valida e retorna cupom se válido
+  const cupom = DBHotel.cupons.find(c => c.codigo === codigo);
+  if(!cupom) return {ok:false, msg:'Cupom não encontrado'};
+  
+  const agora = new Date();
+  const expiracao = new Date(cupom.dataExp);
+  if(agora > expiracao) return {ok:false, msg:'Cupom expirado'};
+  
+  if(cupom.usos_atuais >= cupom.usos_max) return {ok:false, msg:'Cupom sem utilizações restantes'};
+  
+  return {ok:true, cupom};
+}
+
+/* ---------- Gestão de Hóspedes e Ficha ---------- */
+function obterOuCriarHospede(nome, documento, contacto, email=''){
+  // Se existe hóspede com este documento, retorna-o
+  let hospede = DBHotel.hospedes.find(h => h.documento === documento);
+  if(hospede) return hospede;
+  
+  // Criar novo hóspede
+  hospede = {
+    id: uidHotel(),
+    nome: nome,
+    documento: documento,
+    contacto: contacto,
+    email: email,
+    morada: '',
+    pais: '',
+    notas: '',
+    preferencias: [],
+    dataPrimeira: new Date().toISOString().split('T')[0],
+    totalEstadias: 0,
+    diasTotais: 0,
+    fidelizacao: 'bronze', // bronze, prata, ouro, platina
+    descricaoGuest: ''
+  };
+  
+  DBHotel.hospedes.push(hospede);
+  return hospede;
+}
+
+function registarEstadiaHotel(reservaId, checkinReal, checkoutReal, quartoId, notas=''){
+  const reserva = DBHotel.reservas.find(r => r.id === reservaId);
+  if(!reserva) return;
+  
+  const noites = calcularNoitesHotel(checkinReal, checkoutReal);
+  
+  const estadia = {
+    id: uidHotel(),
+    reservaId: reservaId,
+    hospedeId: null, // será preenchido se houver
+    checkinReal: checkinReal,
+    checkoutReal: checkoutReal,
+    quartoId: quartoId,
+    noites: noites,
+    totalPago: 0,
+    notas: notas,
+    avaliacao: 0,
+    dataCriacao: new Date().toISOString().split('T')[0]
+  };
+  
+  DBHotel.estadias.push(estadia);
+  
+  // Atualizar fidelização do hóspede
+  if(reserva.hospedeId){
+    const hospede = DBHotel.hospedes.find(h => h.id === reserva.hospedeId);
+    if(hospede){
+      hospede.totalEstadias = (hospede.totalEstadias || 0) + 1;
+      hospede.diasTotais = (hospede.diasTotais || 0) + noites;
+      
+      // Atualizar nível fidelização
+      if(hospede.totalEstadias >= 10) hospede.fidelizacao = 'platina';
+      else if(hospede.totalEstadias >= 5) hospede.fidelizacao = 'ouro';
+      else if(hospede.totalEstadias >= 2) hospede.fidelizacao = 'prata';
+      else hospede.fidelizacao = 'bronze';
+    }
+  }
+  
+  return estadia;
 }
 
 /* ---------- ligação (opcional) à Tesouraria/Contabilidade ----------
