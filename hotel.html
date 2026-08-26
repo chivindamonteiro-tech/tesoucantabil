@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tesoucantabil — Hotelaria & Restauração</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  :root{
+    --verde-escuro:#14232B; --verde:#1F6F68; --verde-claro:#E4F0EE;
+    --castanho:#C89B3C; --azul-nav:#1F6F68;
+    --creme:#FBF3E1; --creme-texto:#14232B; --linha-alt:#FBF8F1; --cinza-sub:#F6F1E7;
+    --bg:#F6F1E7; --card:#ffffff; --texto:#14232B; --muted:#55666E;
+    --borda:#DDD2B8; --vermelho:#A6472E; --amarelo:#C89B3C;
+    --gold:#C89B3C; --roxo:#6B4FA5; --roxo-claro:#EDE7F9;
+    --font-display:'Fraunces',Georgia,serif; --font-body:'Inter','Segoe UI',Arial,Helvetica,sans-serif; --font-mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--font-body);background:var(--bg);color:var(--texto);}
+  #app{display:flex;min-height:100vh;}
+  nav{width:224px;background:var(--verde-escuro);color:#fff;flex-shrink:0;padding:20px 0;}
+  nav h1{font-size:15px;padding:0 18px 16px;margin:0 0 6px;border-bottom:1px solid rgba(246,241,231,.14);line-height:1.35;font-family:var(--font-display);font-weight:600;letter-spacing:.01em;}
+  nav .item{padding:10px 18px;cursor:pointer;font-size:13.5px;opacity:.82;border-left:3px solid transparent;color:#C7D2D4;transition:background .15s,opacity .15s;}
+  nav .item:hover{opacity:1;background:rgba(246,241,231,.07);color:#fff;}
+  nav .item.active{opacity:1;background:var(--azul-nav);color:#fff;border-left:3px solid var(--gold);font-weight:600;}
+  main{flex:1;padding:24px 32px;overflow-x:auto;}
+  h2{background:var(--verde-escuro);color:#fff;font-family:var(--font-display);font-weight:600;
+     padding:12px 20px;margin:0 0 16px;border-radius:8px;font-size:17px;letter-spacing:.01em;}
+  main h2.sub{background:var(--cinza-sub);color:var(--verde);font-family:var(--font-display);font-weight:600;
+     padding:8px 14px;border-radius:7px;font-size:13.5px;text-transform:uppercase;letter-spacing:.05em;}
+  .cards{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px;}
+  .card{background:var(--card);border:1px solid var(--borda);border-radius:10px;padding:16px 20px;min-width:180px;flex:1;}
+  .card .lbl{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+  .card .val{font-size:22px;font-weight:600;margin-top:5px;font-family:var(--font-mono);}
+  .val.pos{color:var(--verde);} .val.neg{color:var(--vermelho);}
+  table{width:100%;border-collapse:collapse;background:var(--card);font-size:13px;}
+  th,td{padding:9px 11px;border-bottom:1px solid var(--linha-alt);text-align:left;white-space:nowrap;}
+  th{background:var(--verde-escuro);color:#fff;font-family:var(--font-body);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0;}
+  tbody tr:nth-child(even) td{background:var(--linha-alt);}
+  tr:hover td{background:#F3ECD9;}
+  td.right, th.right{font-family:var(--font-mono);}
+  .tablewrap{border:1px solid var(--borda);border-radius:10px;overflow:auto;max-height:60vh;margin-top:10px;}
+  form.inline{background:var(--card);border:1px solid var(--borda);border-radius:10px;padding:18px;margin-bottom:18px;}
+  form.inline .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
+  label{font-size:11.5px;color:var(--muted);display:block;margin-bottom:4px;font-weight:500;}
+  input,select{width:100%;padding:8px 10px;border:1px solid var(--borda);border-radius:7px;font-size:13px;font-family:var(--font-body);background:#fff;color:var(--texto);}
+  input:focus,select:focus{outline:2px solid var(--gold);outline-offset:1px;border-color:var(--gold);}
+  button{cursor:pointer;border:none;border-radius:7px;padding:9px 16px;font-size:13px;font-weight:600;background:var(--verde);color:#fff;font-family:var(--font-body);transition:background .15s;}
+  button:hover{background:#195A54;}
+  button.sec{background:#fff;color:var(--verde-escuro);border:1px solid var(--borda);}
+  button.sec:hover{background:var(--bg);}
+  button.danger{background:#fff;color:var(--vermelho);border:1px solid var(--vermelho);padding:4px 9px;font-size:11px;}
+  button.danger:hover{background:#FBEDE8;}
+  .actions{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;}
+  .badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+  .badge.pago{background:var(--verde-claro);color:var(--verde);} .badge.pendente{background:#FBF3E1;color:#8A6A22;} .badge.atraso{background:#F5E6E1;color:var(--vermelho);}
+  .note{font-size:12.5px;color:var(--creme-texto);background:var(--creme);padding:9px 13px;border-radius:7px;margin-top:8px;display:block;border:1px solid var(--gold);font-style:italic;}
+  td.note,p.note{display:block;}
+  .right{text-align:right;font-family:var(--font-mono);}
+  #toast{position:fixed;bottom:18px;right:18px;background:var(--verde-escuro);color:#fff;padding:11px 20px;border-radius:8px;font-size:13px;display:none;z-index:99;font-family:var(--font-body);}
+  #loginScreen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--verde-escuro);}
+  #loginScreen .box{background:#fff;border-radius:12px;padding:34px 32px;width:340px;box-shadow:0 8px 30px rgba(0,0,0,.25);}
+  #loginScreen h1{font-family:var(--font-display);color:var(--verde-escuro);font-size:21px;font-weight:600;margin:0 0 4px;}
+  #loginScreen p.sub{color:var(--muted);font-size:12.5px;margin:0 0 18px;}
+  #loginScreen input{margin-bottom:10px;}
+  #loginScreen button{width:100%;padding:10px;margin-top:4px;}
+  #loginScreen .erro{color:var(--vermelho);font-size:12.5px;margin-top:8px;}
+</style>
+</head>
+<body>
+<div id="loginScreen" style="display:none;">
+  <div class="box">
+    <h1>TESOUCANTABIL</h1>
+    <p class="sub">Hotelaria &amp; Restauração — acesso da equipa</p>
+    <form id="formLogin">
+      <label>E-mail</label><input type="email" id="loginEmail" required>
+      <label>Palavra-passe</label><input type="password" id="loginSenha" required minlength="6">
+      <button type="submit" id="btnLoginSubmit">Entrar</button>
+      <div class="erro" id="loginErro"></div>
+    </form>
+    <p class="sub" style="margin-top:14px;">Mesma conta que já usa no Tesoucantábil (Tesouraria/Contabilidade).</p>
+  </div>
+</div>
+<div id="app" style="display:none;">
+  <nav id="nav"></nav>
+  <main id="main"></main>
+</div>
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="core.js"></script>
+<script>
+/* ============================================================
+   TESOUCANTABIL — HOTELARIA & RESTAURAÇÃO (hotel.html)
+   ============================================================
+   Ficheiro separado do Tesoucantábil (Tesouraria/Contabilidade),
+   dentro do MESMO projeto: usa o mesmo login/equipa e o mesmo
+   servidor (Supabase) via core.js, mas guarda os seus próprios
+   dados (Quartos e Reservas) numa tabela própria — "hotel_data" —
+   sem tocar nos dados de Tesouraria.
+
+   Ligação com a Tesouraria: ao Fazer Check-out (ou ao registar um
+   Sinal/Adiantamento), este ficheiro chama adicionarLancamentoPartilhado()
+   (definida em core.js), que acrescenta um Lançamento de Receita
+   diretamente na MESMA tabela erp_data que o Tesoucantábil usa —
+   por isso a receita de hospedagem aparece sozinha lá (Lançamentos,
+   DRE, Resumo Mensal), sem digitação dupla.
+
+   ---------- Configuração necessária (uma vez só) no Supabase ----------
+   Antes de usar, corra este SQL no SQL Editor do projeto Supabase
+   (o mesmo projeto do Tesoucantábil) para criar a tabela deste
+   departamento, com o mesmo modelo já usado em erp_data:
+
+     create table if not exists hotel_data (
+       id text primary key,
+       data jsonb not null default '{}'::jsonb,
+       versao integer not null default 0,
+       updated_at timestamptz not null default now()
+     );
+     insert into hotel_data (id, data) values ('main', '{}'::jsonb)
+       on conflict (id) do nothing;
+     alter table hotel_data enable row level security;
+     create policy "Leitura/escrita para utilizadores autenticados"
+       on hotel_data for all
+       to authenticated
+       using (true) with check (true);
+   ======================================================== */
+
+let DB = { quartos:[], reservas:[] };
+const armazemHotel = criarArmazemDepartamento('hotel_data');
+let currentTab = 'reservas';
+let reservaAberta = new Set(); /* ids de reservas com o mini-painel de Check-out aberto */
+
+/* ---------- Cálculos de reserva (mesma lógica já usada no Tesoucantábil) ---------- */
+function reservaNoites(r){
+  if(!r.checkInPrevisto || !r.checkOutPrevisto) return 0;
+  const ini = new Date(r.checkInPrevisto+'T00:00:00'), fim = new Date(r.checkOutPrevisto+'T00:00:00');
+  const dias = Math.round((fim-ini)/86400000);
+  return dias>0 ? dias : 0;
+}
+function reservaSaldoPendente(r){
+  return Math.max(0, Math.round((Number(r.valorTotal||0) - Number(r.sinal||0))*100)/100);
+}
+function reservaQuartoOcupadoNoIntervalo(numeroQuarto, checkIn, checkOut, ignorarReservaId){
+  return DB.reservas.some(r=>{
+    if(r.id===ignorarReservaId) return false;
+    if(r.quarto!==numeroQuarto) return false;
+    if(r.estado==='Cancelada') return false;
+    const inicioR = r.checkInReal || r.checkInPrevisto;
+    const fimR = r.checkOutReal || r.checkOutPrevisto;
+    if(!inicioR || !fimR) return false;
+    return (checkIn < fimR) && (checkOut > inicioR);
+  });
+}
+
+/* ---------- Navegação (simples — um só departamento por agora) ---------- */
+function renderNav(){
+  const nav = document.getElementById('nav');
+  nav.innerHTML = `<h1>TESOUCANTABIL<br><span style="font-weight:normal;font-size:11px;opacity:.85;">Hotelaria &amp; Restauração</span></h1>
+    <div style="padding:8px 16px;font-size:10.5px;opacity:.7;border-bottom:1px solid rgba(255,255,255,.15);">🔗 ${meuEmail||''} · ${meuPapel==='administrador'?'Administrador':'Colaborador'}</div>
+    <div class="item active" data-tab="reservas">🏨 Reservas &amp; Ocupação</div>
+    <div class="item" id="btnSair" style="margin-top:14px;border-top:1px solid rgba(255,255,255,.15);opacity:.75;">🚪 Sair</div>`;
+  document.getElementById('btnSair').onclick = async ()=>{ await sairSessao(); };
+}
+
+function render(){
+  renderNav();
+  const main = document.getElementById('main');
+  main.innerHTML = viewReservas();
+  bindEvents();
+}
+
+/* ---------- Ecrã Reservas & Ocupação ---------- */
+function viewReservas(){
+  const quartos = DB.quartos||[];
+  const reservas = (DB.reservas||[]).slice().reverse();
+  const hojeStr = hoje();
+
+  const quartosAtivos = quartos.filter(q=>q.estado!=='Inativo');
+  const amanha = new Date(hojeStr+'T00:00:00'); amanha.setDate(amanha.getDate()+1);
+  const ocupadosHoje = quartosAtivos.filter(q=>reservaQuartoOcupadoNoIntervalo(q.numero, hojeStr, amanha.toISOString().slice(0,10))).length;
+  const taxaOcupacaoHoje = quartosAtivos.length ? Math.round((ocupadosHoje/quartosAtivos.length)*1000)/10 : 0;
+  const reservasAtivas = DB.reservas.filter(r=>r.estado==='Reservado'||r.estado==='Check-in Feito').length;
+  const mesAtual = hojeStr.slice(0,7);
+  const receitaMes = DB.reservas.filter(r=>r.estado==='Concluída' && (r.checkOutReal||'').slice(0,7)===mesAtual).reduce((s,r)=>s+Number(r.valorTotal||0),0);
+
+  const dias14 = Array.from({length:14},(_,i)=>{ const d=new Date(hojeStr+'T00:00:00'); d.setDate(d.getDate()+i); return d.toISOString().slice(0,10); });
+  const mapaHtml = quartosAtivos.length ? `
+  <div class="tablewrap">
+    <table style="font-size:11px;"><thead><tr><th>Quarto</th>${dias14.map(d=>`<th style="text-align:center;">${d.slice(8,10)}/${d.slice(5,7)}</th>`).join('')}</tr></thead>
+    <tbody>
+    ${quartosAtivos.map(q=>`<tr><td><b>${xmlEsc(q.numero)}</b><br><span style="opacity:.7;">${xmlEsc(q.tipo||'')}</span></td>${dias14.map(d=>{
+      const dSeguinte = new Date(d+'T00:00:00'); dSeguinte.setDate(dSeguinte.getDate()+1);
+      const r = DB.reservas.find(rr=>rr.quarto===q.numero && rr.estado!=='Cancelada' && d < (rr.checkOutReal||rr.checkOutPrevisto) && dSeguinte.toISOString().slice(0,10) > (rr.checkInReal||rr.checkInPrevisto));
+      if(!r) return `<td style="background:#eef6ec;"></td>`;
+      const cor = r.estado==='Check-in Feito' ? '#d9c98a' : (r.estado==='Concluída' ? '#c9c9c9' : '#e7b7a0');
+      return `<td style="background:${cor};text-align:center;" title="${xmlEsc(r.hospede)} — ${r.estado}">${xmlEsc((r.hospede||'').split(' ')[0])}</td>`;
+    }).join('')}</tr>`).join('')}
+    </tbody></table>
+  </div>
+  <p class="note">🟩 Livre · 🟧 Reservado (sem check-in ainda) · 🟨 Check-in feito (hóspede no quarto) · ⬜ Concluída (já fez check-out)</p>` : `<p class="note">Ainda sem quartos ativos cadastrados — adicione pelo menos um quarto abaixo para o Mapa de Ocupação aparecer.</p>`;
+
+  const linhasQuartos = quartos.map(q=>`<tr>
+    <td>${xmlEsc(q.numero)}</td><td>${xmlEsc(q.tipo||'')}</td><td class="right">${q.capacidade||'—'}</td>
+    <td class="right">${fmt(q.precoDiario)}</td><td>${q.estado||'Ativo'}</td>
+    <td><button class="danger" data-del-quarto="${q.id}">Apagar</button></td>
+  </tr>`).join('') || `<tr><td colspan="6" class="note">Nenhum quarto cadastrado ainda.</td></tr>`;
+
+  const linhasReservas = reservas.map(r=>{
+    const saldo = reservaSaldoPendente(r);
+    const badge = r.estado==='Concluída'?'pago':(r.estado==='Cancelada'?'atraso':'pendente');
+    const painelCheckout = reservaAberta.has(r.id) ? `<tr><td colspan="10" style="background:#f7f5ef;padding:10px 14px;">
+      <b>Fazer Check-out e faturar o saldo (${fmt(saldo)} Kz)</b>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));align-items:end;margin-top:6px;">
+        <div><label>Forma de Pagamento</label><select id="resFormaPagCheckout_${r.id}">${FORMAS_PAGAMENTO.map(f=>`<option value="${f}">${labelFormaPagamento(f)}</option>`).join('')}</select></div>
+        <div><label>Conta</label><select id="resContaCheckout_${r.id}">${CONTAS.map(c=>`<option value="${c.codigo}">${c.nome}</option>`).join('')}</select></div>
+        <div><button type="button" data-checkout-confirmar="${r.id}">✅ Confirmar Check-out</button> <button type="button" class="sec" data-checkout-cancelar="${r.id}">Cancelar</button></div>
+      </div>
+      ${saldo<=0.5 ? '<p class="note">Saldo já coberto pelo sinal — o Check-out fica registado sem gerar novo lançamento.</p>' : ''}
+    </td></tr>` : '';
+    return `<tr>
+      <td>${xmlEsc(r.quarto)}</td>
+      <td>${xmlEsc(r.hospede)}${r.contacto?`<br><span style="opacity:.7;font-size:11px;">${xmlEsc(r.contacto)}</span>`:''}</td>
+      <td>${r.checkInReal||r.checkInPrevisto}</td>
+      <td>${r.checkOutReal||r.checkOutPrevisto}</td>
+      <td class="right">${reservaNoites(r)}</td>
+      <td class="right">${fmt(r.valorTotal)}</td>
+      <td class="right">${fmt(r.sinal||0)}</td>
+      <td class="right">${fmt(saldo)}</td>
+      <td><span class="badge ${badge}">${r.estado}</span></td>
+      <td>
+        ${r.estado==='Reservado' ? `<button class="sec" data-checkin="${r.id}">Fazer Check-in</button> ` : ''}
+        ${r.estado==='Check-in Feito' ? `<button class="sec" data-toggle-checkout="${r.id}">${reservaAberta.has(r.id)?'Fechar':'Fazer Check-out'}</button> ` : ''}
+        ${(r.estado==='Reservado'||r.estado==='Check-in Feito') ? `<button class="danger" data-cancelar-reserva="${r.id}">Cancelar</button> ` : ''}
+        <button class="danger" data-del-reserva="${r.id}">Apagar</button>
+      </td>
+    </tr>${painelCheckout}`;
+  }).join('') || `<tr><td colspan="10" class="note">Nenhuma reserva registada ainda.</td></tr>`;
+
+  return `
+  <h2 style="background:var(--castanho);">🏨 Reservas &amp; Ocupação — Zoom's Lodge</h2>
+  <p class="note">Controlo de quartos e reservas de hospedagem. Ao <b>Fazer Check-out</b> (ou ao registar um Sinal/Adiantamento na reserva), este ficheiro lança sozinho a Receita correspondente diretamente no Tesoucantábil (categoria "Prestação de Serviços de Alojamento") — sem repetir digitação lá.</p>
+  <div class="cards">
+    <div class="card"><div class="lbl">Ocupação Hoje</div><div class="val">${ocupadosHoje}/${quartosAtivos.length} (${taxaOcupacaoHoje}%)</div></div>
+    <div class="card"><div class="lbl">Reservas Ativas</div><div class="val">${reservasAtivas}</div></div>
+    <div class="card"><div class="lbl">Receita do Mês (Check-outs concluídos)</div><div class="val pos">${fmt(receitaMes)} Kz</div></div>
+  </div>
+
+  <h2 class="sub" style="margin-top:18px;">🗺️ Mapa de Ocupação (próximos 14 dias)</h2>
+  ${mapaHtml}
+
+  <h2 class="sub" style="margin-top:18px;">🛏️ Quartos</h2>
+  <form class="inline" id="formQuarto">
+    <div class="grid">
+      <div><label>Número/Nome do Quarto</label><input name="numero" required placeholder="Ex.: 101"></div>
+      <div><label>Tipo</label><input name="tipo" placeholder="Ex.: Standard, Deluxe, Suíte"></div>
+      <div><label>Capacidade (hóspedes)</label><input type="number" min="1" step="1" name="capacidade" value="2"></div>
+      <div><label>Preço Diário (Kz)</label><input type="number" step="0.01" name="precoDiario" required></div>
+      <div><label>Estado</label><select name="estado"><option>Ativo</option><option>Manutenção</option><option>Inativo</option></select></div>
+    </div>
+    <div class="actions"><button type="submit">+ Adicionar Quarto</button></div>
+  </form>
+  <div class="tablewrap"><table><thead><tr><th>Quarto</th><th>Tipo</th><th class="right">Capacidade</th><th class="right">Preço Diário</th><th>Estado</th><th></th></tr></thead>
+  <tbody>${linhasQuartos}</tbody></table></div>
+
+  <h2 class="sub" style="margin-top:18px;">📅 Nova Reserva</h2>
+  ${quartos.length ? `
+  <form class="inline" id="formReserva">
+    <div class="grid">
+      <div><label>Quarto</label><select name="quarto" id="resQuartoSel">${quartos.filter(q=>q.estado!=='Inativo').map(q=>`<option value="${xmlEsc(q.numero)}" data-preco="${q.precoDiario||0}">${xmlEsc(q.numero)} — ${xmlEsc(q.tipo||'')} (${fmt(q.precoDiario)} Kz/noite)</option>`).join('')}</select></div>
+      <div><label>Hóspede</label><input name="hospede" required></div>
+      <div><label>Contacto</label><input name="contacto" placeholder="Telefone ou e-mail"></div>
+      <div><label>Check-in Previsto</label><input type="date" name="checkInPrevisto" id="resCheckIn" value="${hojeStr}" required></div>
+      <div><label>Check-out Previsto</label><input type="date" name="checkOutPrevisto" id="resCheckOut" required></div>
+      <div><label>Preço Diário (Kz)</label><input type="number" step="0.01" name="precoDiario" id="resPrecoDiario"></div>
+      <div><label>Valor Total (Kz)</label><input type="number" step="0.01" name="valorTotal" id="resValorTotal" placeholder="Sugestão automática pelas datas"></div>
+      <div><label>Sinal/Adiantamento Recebido (opcional)</label><input type="number" step="0.01" name="sinal" value="0"></div>
+      <div><label>Forma de Pagamento do Sinal</label><select name="formaPagamentoSinal">${FORMAS_PAGAMENTO.map(f=>`<option value="${f}">${labelFormaPagamento(f)}</option>`).join('')}</select></div>
+      <div><label>Conta do Sinal</label><select name="contaSinal">${CONTAS.map(c=>`<option value="${c.codigo}">${c.nome}</option>`).join('')}</select></div>
+      <div style="grid-column:1/-1;"><label>Observações</label><input name="observacoes"></div>
+    </div>
+    <div class="actions"><button type="submit">+ Registar Reserva</button></div>
+  </form>` : `<p class="note">Cadastre pelo menos um quarto acima antes de criar uma reserva.</p>`}
+
+  <h2 class="sub" style="margin-top:18px;">📋 Reservas</h2>
+  <div class="tablewrap"><table><thead><tr><th>Quarto</th><th>Hóspede</th><th>Check-in</th><th>Check-out</th><th class="right">Noites</th><th class="right">Valor Total</th><th class="right">Sinal</th><th class="right">Saldo</th><th>Estado</th><th></th></tr></thead>
+  <tbody>${linhasReservas}</tbody></table></div>`;
+}
+
+/* ---------- Eventos ---------- */
+function bindEvents(){
+  const formQuarto = document.getElementById('formQuarto');
+  if(formQuarto) formQuarto.onsubmit = async e=>{
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(formQuarto).entries());
+    if(!f.numero || !f.numero.trim()){ toast('Indique o número/nome do quarto.'); return; }
+    if((DB.quartos||[]).some(q=>q.numero===f.numero.trim())){ toast('Já existe um quarto com esse número/nome.'); return; }
+    DB.quartos = DB.quartos||[];
+    DB.quartos.push({id:uid(), numero:f.numero.trim(), tipo:f.tipo||'', capacidade:Number(f.capacidade)||1, precoDiario:Number(f.precoDiario)||0, estado:f.estado||'Ativo'});
+    const ok = await armazemHotel.gravar(DB);
+    if(ok){ toast('Quarto adicionado.'); render(); }
+  };
+  document.querySelectorAll('[data-del-quarto]').forEach(b=>b.onclick=async()=>{
+    const id = b.dataset.delQuarto;
+    const q = (DB.quartos||[]).find(x=>x.id===id);
+    if(q && DB.reservas.some(r=>r.quarto===q.numero)){ toast('Este quarto tem reservas associadas — não é possível apagar.'); return; }
+    if(!confirm('Apagar este quarto?')) return;
+    DB.quartos = (DB.quartos||[]).filter(x=>x.id!==id);
+    const ok = await armazemHotel.gravar(DB);
+    if(ok){ toast('Quarto apagado.'); render(); }
+  });
+
+  const resQuartoSel = document.getElementById('resQuartoSel');
+  const resCheckIn = document.getElementById('resCheckIn');
+  const resCheckOut = document.getElementById('resCheckOut');
+  const resPrecoDiario = document.getElementById('resPrecoDiario');
+  const resValorTotal = document.getElementById('resValorTotal');
+  if(resQuartoSel && resCheckIn && resCheckOut && resPrecoDiario && resValorTotal){
+    const sugerirValorReserva = ()=>{
+      const precoOpt = Number((resQuartoSel.selectedOptions[0]||{}).dataset?.preco || 0);
+      if(!resPrecoDiario.value) resPrecoDiario.value = precoOpt || '';
+      const preco = Number(resPrecoDiario.value)||precoOpt||0;
+      if(resCheckIn.value && resCheckOut.value){
+        const dias = Math.round((new Date(resCheckOut.value+'T00:00:00') - new Date(resCheckIn.value+'T00:00:00'))/86400000);
+        if(dias>0) resValorTotal.value = Math.round(preco*dias*100)/100;
+      }
+    };
+    resQuartoSel.onchange = sugerirValorReserva;
+    resCheckIn.onchange = sugerirValorReserva;
+    resCheckOut.onchange = sugerirValorReserva;
+    resPrecoDiario.onchange = sugerirValorReserva;
+  }
+  const formReserva = document.getElementById('formReserva');
+  if(formReserva) formReserva.onsubmit = async e=>{
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(formReserva).entries());
+    if(!f.hospede || !f.hospede.trim()){ toast('Indique o nome do hóspede.'); return; }
+    if(!f.checkInPrevisto || !f.checkOutPrevisto || f.checkOutPrevisto<=f.checkInPrevisto){ toast('Verifique as datas de Check-in/Check-out (o Check-out deve ser depois do Check-in).'); return; }
+    if(reservaQuartoOcupadoNoIntervalo(f.quarto, f.checkInPrevisto, f.checkOutPrevisto) && !confirm('Este quarto já tem outra reserva nesse período — confirma mesmo assim (overbooking)?')) return;
+    const quartoRef = (DB.quartos||[]).find(q=>q.numero===f.quarto);
+    const precoDiario = Number(f.precoDiario)||Number(quartoRef?.precoDiario)||0;
+    const dias = Math.round((new Date(f.checkOutPrevisto+'T00:00:00') - new Date(f.checkInPrevisto+'T00:00:00'))/86400000);
+    const valorTotal = Number(f.valorTotal)|| Math.round(precoDiario*dias*100)/100;
+    const sinal = Number(f.sinal)||0;
+    if(sinal>valorTotal){ toast('O sinal não pode ser maior do que o Valor Total.'); return; }
+    const reserva = {
+      id: uid(), quarto:f.quarto, hospede:f.hospede.trim(), contacto:f.contacto||'',
+      checkInPrevisto:f.checkInPrevisto, checkOutPrevisto:f.checkOutPrevisto, checkInReal:'', checkOutReal:'',
+      precoDiario, valorTotal, sinal, sinalLancamentoId:null, lancamentoId:null,
+      estado:'Reservado', observacoes:f.observacoes||'', criadoEm:new Date().toISOString(),
+    };
+    if(sinal>0){
+      const formaPagamentoSinal = f.formaPagamentoSinal||'Cash';
+      const origemSinal = `ZOOM'S LODGE ${formaPagamentoSinal==='Cash'?'CASH':'BANCO'}`;
+      const lancSinal = {id:uid(), historico:[], data:hoje(), tipo:'Receita', origem:origemSinal, unidade:"ZOOM'S LODGE",
+        categoria:'Prestação de Serviços de Alojamento', formaPagamento:formaPagamentoSinal, conta:f.contaSinal||'CASH',
+        entidade:reserva.hospede, nif:'', nFatura:'', valor:sinal, moeda:'KZ', iva:'Não', taxaIVA:0,
+        descricao:`Sinal/Adiantamento — Reserva Quarto ${reserva.quarto} — ${reserva.hospede} (${reserva.checkInPrevisto} a ${reserva.checkOutPrevisto})`};
+      const resultado = await adicionarLancamentoPartilhado(lancSinal);
+      if(!resultado.ok){ toast('Reserva NÃO registada — falha ao lançar o sinal na Tesouraria: '+resultado.erro); return; }
+      reserva.sinalLancamentoId = lancSinal.id;
+    }
+    DB.reservas = DB.reservas||[];
+    DB.reservas.push(reserva);
+    const ok = await armazemHotel.gravar(DB);
+    if(ok){ toast('Reserva registada.'); render(); }
+  };
+  document.querySelectorAll('[data-checkin]').forEach(b=>b.onclick=async()=>{
+    const r = DB.reservas.find(x=>x.id===b.dataset.checkin);
+    if(!r) return;
+    r.checkInReal = hoje(); r.estado = 'Check-in Feito';
+    const ok = await armazemHotel.gravar(DB);
+    if(ok){ toast('Check-in registado.'); render(); }
+  });
+  document.querySelectorAll('[data-toggle-checkout]').forEach(b=>b.onclick=()=>{
+    const id = b.dataset.toggleCheckout;
+    if(reservaAberta.has(id)) reservaAberta.delete(id); else reservaAberta.add(id);
+    render();
+  });
+  document.querySelectorAll('[data-checkout-cancelar]').forEach(b=>b.onclick=()=>{
+    reservaAberta.delete(b.dataset.checkoutCancelar); render();
+  });
+  document.querySelectorAll('[data-checkout-confirmar]').forEach(b=>b.onclick=async()=>{
+    const id = b.dataset.checkoutConfirmar;
+    const r = DB.reservas.find(x=>x.id===id);
+    if(!r) return;
+    const saldo = reservaSaldoPendente(r);
+    const selForma = document.getElementById(`resFormaPagCheckout_${id}`);
+    const selConta = document.getElementById(`resContaCheckout_${id}`);
+    const formaPagamento = selForma ? selForma.value : 'Cash';
+    const conta = selConta ? selConta.value : 'CASH';
+    if(saldo>0.5){
+      const origem = `ZOOM'S LODGE ${formaPagamento==='Cash'?'CASH':'BANCO'}`;
+      const lanc = {id:uid(), historico:[], data:hoje(), tipo:'Receita', origem, unidade:"ZOOM'S LODGE",
+        categoria:'Prestação de Serviços de Alojamento', formaPagamento, conta,
+        entidade:r.hospede, nif:'', nFatura:'', valor:saldo, moeda:'KZ', iva:'Não', taxaIVA:0,
+        descricao:`Check-out — Reserva Quarto ${r.quarto} — ${r.hospede} (${r.checkInPrevisto} a ${r.checkOutPrevisto})`};
+      const resultado = await adicionarLancamentoPartilhado(lanc);
+      if(!resultado.ok){ toast('Check-out NÃO confirmado — falha ao lançar na Tesouraria: '+resultado.erro); return; }
+      r.lancamentoId = lanc.id;
+    }
+    r.checkOutReal = hoje(); r.estado = 'Concluída';
+    reservaAberta.delete(id);
+    const ok = await armazemHotel.gravar(DB);
+    if(ok){ toast('Check-out registado e faturado.'); render(); }
+  });
+  document.querySelectorAll('[data-cancelar-reserva]').forEach(b=>b.onclick=async()=>{
+    const r = DB.reservas.find(x=>x.id===b.dataset.cancelarReserva);
+    if(!r) return;
+    if(!confirm(`Cancelar a reserva de ${r.hospede} (Quarto ${r.quarto})?${r.sinalLancamentoId?' O sinal já lançado NÃO é apagado automaticamente — trate o eventual reembolso manualmente no Tesoucantábil.':''}`)) return;
+    r.estado = 'Cancelada';
+    const ok = await armazemHotel.gravar(DB);
+    if(ok){ toast('Reserva cancelada.'); render(); }
+  });
+  document.querySelectorAll('[data-del-reserva]').forEach(b=>b.onclick=async()=>{
+    const r = DB.reservas.find(x=>x.id===b.dataset.delReserva);
+    if(!r) return;
+    if(!confirm('Apagar esta reserva? Isto NÃO apaga automaticamente os Lançamentos de Receita já gerados no Tesoucantábil (sinal/check-out) — apague-os lá manualmente se for o caso.')) return;
+    DB.reservas = DB.reservas.filter(x=>x.id!==r.id);
+    const ok = await armazemHotel.gravar(DB);
+    if(ok){ toast('Reserva apagada.'); render(); }
+  });
+}
+
+/* ---------- Arranque ---------- */
+function mostrarApp(logado){
+  document.getElementById('loginScreen').style.display = logado ? 'none' : 'flex';
+  document.getElementById('app').style.display = logado ? 'flex' : 'none';
+}
+async function aoEntrarNaApp(){
+  mostrarApp(true);
+  DB = await armazemHotel.carregar({ quartos:[], reservas:[] });
+  render();
+}
+function aoSairDaApp(){ mostrarApp(false); }
+iniciarLogin(aoEntrarNaApp, aoSairDaApp);
+</script>
+</body>
+</html>
