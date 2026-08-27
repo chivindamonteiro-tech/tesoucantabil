@@ -95,12 +95,13 @@ function toastHotel(msg, tipo='info'){
 
 /* ---------- estado dos dados de Hotelaria ---------- */
 let DBHotel = {
-  tiposQuarto: [
-    {id:'std', nome:'Standard', capacidade:2, precoBase:15000},
-    {id:'lux', nome:'Luxo', capacidade:2, precoBase:25000},
-    {id:'suite', nome:'Suite', capacidade:3, precoBase:40000},
-    {id:'fam', nome:'Familiar', capacidade:4, precoBase:35000}
-  ],
+  // Os tipos de quarto reais (T0, T2, T2-P, T2+1, T2+2, T2+2 VIP, T3) são
+  // criados automaticamente pelo seedQuartosDefaultHotel() em hotel.html,
+  // a partir da Tabela de Preços das Suites 2026. Não colocar aqui tipos
+  // genéricos de exemplo — já causou 4 tipos "fantasma" (Standard/Luxo/
+  // Suite/Familiar) sem quartos associados a aparecerem na Tabela de Preços
+  // e no formulário de Nova Reserva.
+  tiposQuarto: [],
   quartos: [],
   reservas: [],
   bloqueios: [],
