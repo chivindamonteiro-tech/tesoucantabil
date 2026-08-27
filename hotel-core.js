@@ -28,6 +28,57 @@ function uidHotel(){
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 }
 
+/* ============================================================
+   ESQUEMA REAL DO TESOUCANTÁBIL (contabilidade.html)
+   ------------------------------------------------------------
+   Estas constantes replicam EXATAMENTE os valores usados em
+   DB.lancamentos no contabilidade.html, para que os lançamentos
+   gerados aqui (Sinal, Folio, Split no Check-out) fiquem 100%
+   compatíveis com os relatórios, filtros e categorias do
+   Tesoucantábil (nada de "Receita"/"receita" trocado, nem
+   "TPA" em vez de "TPA (Multicaixa)").
+   ============================================================ */
+const UNIDADE_HOTEL = "ZOOM'S LODGE";
+
+const FORMAS_PAGAMENTO_HOTEL = ["Cash","Banco","TPA (Multicaixa)","Multicaixa Express","Transferência Bancária"];
+
+/* Mesmas 7 contas do Plano de Contas do Tesoucantábil (CASH + 6 contas bancárias) */
+const CONTAS_HOTEL = [
+  {codigo:"CASH", nome:"CAIXA TESOURARIA (Caixa Geral)"},
+  {codigo:"BAI-KZ-001", nome:"BAI-KZ-001 (BAI, KZ)"},
+  {codigo:"BAI-EUR-001", nome:"BAI-EUR-001 (BAI, EUR)"},
+  {codigo:"BAI-USD-002", nome:"BAI-USD-002 (BAI, USD)"},
+  {codigo:"BAI-003", nome:"BAI-003 (BAI)"},
+  {codigo:"BFA-KZ-002", nome:"BFA-KZ-002 (BFA, KZ)"},
+  {codigo:"BFA-001", nome:"BFA-001 (BFA)"}
+];
+
+/* Mapeamento de Tipo de Venda do Zoom's Lodge → Categoria (Receitas Operacionais),
+   idêntico ao TIPOS_VENDA_ZOOMS_LODGE do contabilidade.html */
+const TIPOS_VENDA_ZOOMS_LODGE_HOTEL = {
+  "Hospedagem": "Prestação de Serviços de Alojamento",
+  "Restauração": "Receitas de Restauração",
+  "Bar": "Receitas de Bar e Bebidas",
+  "Outros Serviços": "Receitas de Outros Serviços"
+};
+
+/* Rótulo de exibição — igual ao labelFormaPagamento do contabilidade.html */
+function labelFormaPagamentoHotel(f){ return f==='Cash' ? 'Cash (Numerário)' : (f||'—'); }
+
+/* Origem automática = Unidade + CASH/BANCO, exatamente como origemAutomatica()
+   no contabilidade.html (usado nos relatórios agrupados por Origem/RESUMO). */
+function origemAutomaticaHotel(forma){
+  return `${UNIDADE_HOTEL} ${forma==='Cash' ? 'CASH' : 'BANCO'}`;
+}
+
+/* Número de referência interno da fatura do hotel (não é a série oficial
+   gerarNumeroFatura do Tesoucantábil, que vive só dentro do contabilidade.html —
+   mas identifica claramente a origem no campo nFatura do Lançamento). */
+function gerarNumeroFaturaHotel(quartoId){
+  const ano = new Date().getFullYear();
+  return `ZL/${ano}/H-${quartoId}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
+}
+
 function toastHotel(msg, tipo='info'){
   let el = document.getElementById('toastBoxHotel');
   if(!el){
@@ -82,7 +133,9 @@ let DBHotel = {
   configCanais: {
     icalImportUrls: []
     // {id, canalId, nome, url}
-  }
+  },
+  fechosCaixaHotel: []
+  // fechosCaixaHotel: [{id, data, linhas:[{formaPagamento,conta,tipoVenda,valor}], total, lancamentoIds, criadoEm}]
   // hospedes: [{id, nome, documento, contacto, email, morada, pais, notas, dataPrimeira, totalEstadias, fidelizacao}]
   // estadias: [{id, hospedeId, checkinReal, checkoutReal, quartoId, taxaRef, notas, faturaRef}]
   // folio: [{id, reservaId, data, tipo:'consumo'|'extra'|'desconto'|'sinal'|'pagamento', descricao, categoria, valor, formaPagamento}]
@@ -117,11 +170,12 @@ async function carregarDadosHotel(){
       return;
     }
 
-    DBHotel = Object.assign({tiposQuarto:[],quartos:[],reservas:[],bloqueios:[],hospedes:[],estadias:[],folio:[],faturas:[],reservasCanalExterno:[],configCanais:{icalImportUrls:[]}}, data.data || {});
+    DBHotel = Object.assign({tiposQuarto:[],quartos:[],reservas:[],bloqueios:[],hospedes:[],estadias:[],folio:[],faturas:[],reservasCanalExterno:[],configCanais:{icalImportUrls:[]},fechosCaixaHotel:[]}, data.data || {});
     if(!DBHotel.folio) DBHotel.folio = [];
     if(!DBHotel.faturas) DBHotel.faturas = [];
     if(!DBHotel.reservasCanalExterno) DBHotel.reservasCanalExterno = [];
     if(!DBHotel.configCanais) DBHotel.configCanais = {icalImportUrls:[]};
+    if(!DBHotel.fechosCaixaHotel) DBHotel.fechosCaixaHotel = [];
     versaoHotel = data.versao || 1;
   }catch(e){
     console.warn('Erro ao carregar dados de hotelaria:', e);
@@ -377,18 +431,32 @@ function registarEstadiaHotel(reservaId, checkinReal, checkoutReal, quartoId, no
    fazes hoje com os resumos de caixa de outros setores.
    Requer que core.js esteja também incluído na página, e que a
    função adicionarLancamentoPartilhado exista nele. */
-async function gerarLancamentoReceitaHotel(reserva, valor, descricao){
+async function gerarLancamentoReceitaHotel(reserva, valor, descricao, opcoes={}){
   if(typeof adicionarLancamentoPartilhado !== 'function'){
     toastHotel('Função de lançamento partilhado não disponível nesta página.');
     return {ok:false};
   }
+  const forma = opcoes.formaPagamento || 'Cash';
+  const tipoVenda = opcoes.tipoVenda || 'Hospedagem';
+  const categoria = TIPOS_VENDA_ZOOMS_LODGE_HOTEL[tipoVenda] || TIPOS_VENDA_ZOOMS_LODGE_HOTEL['Hospedagem'];
   return await adicionarLancamentoPartilhado({
     id: uidHotel(),
+    historico: [],
     data: new Date().toISOString().slice(0,10),
-    categoria: 'Hotelaria - Alojamento',
-    descricao: `${descricao} - ${reserva.hospedeNome} (Qt.${reserva.quartoId})`,
-    valor: valor,
-    tipo: 'receita'
+    tipo: 'Receita',
+    unidade: UNIDADE_HOTEL,
+    formaPagamento: forma,
+    conta: opcoes.conta || (forma === 'Cash' ? 'CASH' : 'BAI-KZ-001'),
+    categoria,
+    origem: origemAutomaticaHotel(forma),
+    entidade: '',
+    nif: '',
+    nFatura: gerarNumeroFaturaHotel(reserva.quartoId),
+    valor: Number(valor) || 0,
+    moeda: 'KZ',
+    iva: 'Não',
+    taxaIVA: 0,
+    descricao: `${descricao} - ${reserva.hospedeNome} (Qt.${reserva.quartoId})`
   });
 }
 
@@ -398,15 +466,17 @@ async function gerarLancamentoReceitaHotel(reserva, valor, descricao){
 
 /* Adiciona um lançamento ao folio de uma reserva.
    tipo: 'consumo' | 'extra' | 'desconto' | 'sinal' | 'pagamento'
+   tipoVenda (só relevante para consumo/extra): 'Hospedagem'|'Restauração'|'Bar'|'Outros Serviços'
+   — decide em que Categoria de Receita este valor vai cair no Tesoucantábil.
    Convenção: consumo/extra somam ao saldo devedor; desconto/sinal/pagamento reduzem. */
-function adicionarFolioHotel(reservaId, {tipo, descricao, categoria='', valor, formaPagamento=''}){
+function adicionarFolioHotel(reservaId, {tipo, descricao, tipoVenda='Hospedagem', valor, formaPagamento=''}){
   const item = {
     id: uidHotel(),
     reservaId,
     data: new Date().toISOString().slice(0,10),
     tipo,
     descricao,
-    categoria,
+    tipoVenda,
     valor: Number(valor)||0,
     formaPagamento
   };
@@ -449,8 +519,11 @@ function calcularSaldoFolioHotel(reservaId){
 
 /* Gera N "faturas" (documentos de cobrança internos) para a mesma reserva,
    cada uma com os seus próprios itens, e lança cada uma na Tesouraria via
-   adicionarLancamentoPartilhado (core.js), mantendo o registo em DBHotel.faturas.
-   divisoes: [{ itens:[{descricao,valor}], formaPagamento, unidade }] */
+   adicionarLancamentoPartilhado (core.js) — já no esquema real do
+   contabilidade.html (tipo:'Receita', unidade, formaPagamento, conta,
+   categoria de Receita Operacional, origem calculada) — e mantém o
+   registo em DBHotel.faturas.
+   divisoes: [{ itens:[{descricao,valor,tipoVenda}], formaPagamento, conta }] */
 async function gerarFaturasSplitHotel(reservaId, divisoes){
   const reserva = DBHotel.reservas.find(r => r.id === reservaId);
   if(!reserva) return {ok:false, msg:'Reserva não encontrada'};
@@ -459,38 +532,64 @@ async function gerarFaturasSplitHotel(reservaId, divisoes){
   for(const div of divisoes){
     const total = (div.itens||[]).reduce((s,i)=> s + (Number(i.valor)||0), 0);
     if(total <= 0) continue;
-    const numero = `FL-${reserva.quartoId}-${Date.now().toString(36).slice(-5)}-${geradas.length+1}`;
+    const forma = div.formaPagamento || 'Cash';
+    const conta = div.conta || (forma === 'Cash' ? 'CASH' : 'BAI-KZ-001');
+    const numero = gerarNumeroFaturaHotel(reserva.quartoId);
     const fatura = {
       id: uidHotel(),
       reservaId,
       numero,
       itens: div.itens,
       total,
-      formaPagamento: div.formaPagamento || 'Cash',
+      formaPagamento: forma,
+      conta,
       dataEmissao: new Date().toISOString().slice(0,10),
-      lancamentoId: null
+      lancamentoIds: []
     };
 
+    // "lancado" controla o estado do Resumo de Fecho de Caixa (ver "📤 Lançamentos"):
+    // só fica true quando TODOS os itens desta fatura confirmarem lançamento na
+    // Tesouraria — caso contrário a fatura entra como "pendente" no resumo.
+    let todosLancados = true;
+
     if(typeof adicionarLancamentoPartilhado === 'function'){
-      const desc = (div.itens||[]).map(i=>i.descricao).join(', ');
-      const resultado = await adicionarLancamentoPartilhado({
-        id: uidHotel(),
-        data: fatura.dataEmissao,
-        categoria: 'Hotelaria - Alojamento',
-        descricao: `${fatura.numero} — ${reserva.hospedeNome} (Qt.${reserva.quartoId}): ${desc}`,
-        valor: total,
-        tipo: 'receita',
-        formaPagamento: fatura.formaPagamento,
-        unidade: div.unidade || 'ZOOM\'S LODGE'
-      });
-      fatura.lancamentoId = fatura.id;
-      if(resultado && resultado.ok === false){
-        toastHotel(`Aviso: fatura ${numero} registada localmente, mas o lançamento na Tesouraria falhou.`);
+      // Um Lançamento por item, para cada um cair na Categoria de Receita certa
+      // (Hospedagem/Restauração/Bar/Outros), tal como o Tesoucantábil espera.
+      for(const item of (div.itens||[])){
+        const tipoVenda = item.tipoVenda || 'Hospedagem';
+        const categoria = TIPOS_VENDA_ZOOMS_LODGE_HOTEL[tipoVenda] || TIPOS_VENDA_ZOOMS_LODGE_HOTEL['Hospedagem'];
+        const idLanc = uidHotel();
+        const resultado = await adicionarLancamentoPartilhado({
+          id: idLanc,
+          historico: [],
+          data: fatura.dataEmissao,
+          tipo: 'Receita',
+          unidade: UNIDADE_HOTEL,
+          formaPagamento: forma,
+          conta,
+          categoria,
+          origem: origemAutomaticaHotel(forma),
+          entidade: '',
+          nif: '',
+          nFatura: numero,
+          valor: Number(item.valor) || 0,
+          moeda: 'KZ',
+          iva: 'Não',
+          taxaIVA: 0,
+          descricao: `${numero} — ${reserva.hospedeNome} (Qt.${reserva.quartoId}): ${item.descricao}`
+        });
+        fatura.lancamentoIds.push(idLanc);
+        if(resultado && resultado.ok === false){
+          todosLancados = false;
+          toastHotel(`Aviso: fatura ${numero} registada localmente, mas um lançamento na Tesouraria falhou.`);
+        }
       }
     } else {
+      todosLancados = false;
       toastHotel('Tesouraria (core.js) não está ligada — faturas guardadas só localmente.');
     }
 
+    fatura.lancado = todosLancados;
     DBHotel.faturas.push(fatura);
     geradas.push(fatura);
   }
@@ -501,6 +600,103 @@ async function gerarFaturasSplitHotel(reservaId, divisoes){
 
 function listarFaturasReservaHotel(reservaId){
   return DBHotel.faturas.filter(f => f.reservaId === reservaId);
+}
+
+/* ============================================================
+   LANÇAMENTOS — RESUMO DE FECHO DE CAIXA (mesma lógica do
+   "Fecho de Caixa Dividido" do contabilidade.html: consolida a
+   faturação do check-out por Forma de Pagamento e lança-a na
+   Tesouraria). O check-out (gerarFaturasSplitHotel) já lança cada
+   fatura automaticamente linha a linha; este módulo é o botão de
+   "Lançamentos" que dá visibilidade a isso e recupera faturas que
+   fiquem pendentes (Tesouraria indisponível ou lançamento falhado
+   no momento do check-out).
+   ============================================================ */
+
+/* Faturas de check-out ainda não 100% lançadas na Tesouraria,
+   opcionalmente filtradas por data de emissão. */
+function faturasPendentesHotel(data=''){
+  return DBHotel.faturas.filter(f => f.lancado !== true && (!data || f.dataEmissao === data));
+}
+
+/* Decompõe as faturas pendentes nos seus itens (cada item já tem
+   Forma de Pagamento/Conta/Tipo de Venda próprios) e agrupa por
+   Forma+Conta+Tipo de Venda — são estas as linhas do Resumo de
+   Fecho de Caixa a lançar (uma por combinação). */
+function resumoLinhasPendentesHotel(data=''){
+  const grupos = {};
+  faturasPendentesHotel(data).forEach(f=>{
+    (f.itens||[]).forEach(item=>{
+      const tipoVenda = item.tipoVenda || 'Hospedagem';
+      const chave = `${f.formaPagamento}|${f.conta}|${tipoVenda}`;
+      if(!grupos[chave]) grupos[chave] = {formaPagamento:f.formaPagamento, conta:f.conta, tipoVenda, valor:0, faturaIds:new Set()};
+      grupos[chave].valor += Number(item.valor)||0;
+      grupos[chave].faturaIds.add(f.id);
+    });
+  });
+  return Object.values(grupos).map(g=>({...g, faturaIds:[...g.faturaIds]}));
+}
+
+/* Lança o Resumo de Fecho de Caixa na Tesouraria: um Lançamento de
+   Receita por linha (Forma de Pagamento + Tipo de Venda), marca as
+   faturas incluídas como lancado:true, e guarda o resumo em
+   DBHotel.fechosCaixaHotel para auditoria — igual ao histórico de
+   Fecho de Caixa da Contabilidade. */
+async function lancarResumoFechoCaixaHotel(data, linhas){
+  if(typeof adicionarLancamentoPartilhado !== 'function'){
+    return {ok:false, msg:'Tesouraria (core.js) não está ligada nesta página.'};
+  }
+  const lancamentoIds = [];
+  const faturaIdsTodas = new Set();
+  for(const linha of linhas){
+    const valor = Number(linha.valor)||0;
+    if(valor <= 0) continue;
+    const categoria = TIPOS_VENDA_ZOOMS_LODGE_HOTEL[linha.tipoVenda] || TIPOS_VENDA_ZOOMS_LODGE_HOTEL['Hospedagem'];
+    const idLanc = uidHotel();
+    const resultado = await adicionarLancamentoPartilhado({
+      id: idLanc,
+      historico: [],
+      data,
+      tipo: 'Receita',
+      unidade: UNIDADE_HOTEL,
+      formaPagamento: linha.formaPagamento,
+      conta: linha.conta,
+      categoria,
+      origem: origemAutomaticaHotel(linha.formaPagamento),
+      entidade: '',
+      nif: '',
+      nFatura: `ZL/RESUMO/${data}`,
+      valor,
+      moeda: 'KZ',
+      iva: 'Não',
+      taxaIVA: 0,
+      descricao: `Resumo de Fecho de Caixa — Check-out Hotel (${labelFormaPagamentoHotel(linha.formaPagamento)} · ${linha.tipoVenda}), ${data}`
+    });
+    if(resultado && resultado.ok === false){
+      return {ok:false, msg:'Falha ao lançar na Tesouraria — tenta novamente.'};
+    }
+    lancamentoIds.push(idLanc);
+    (linha.faturaIds||[]).forEach(id=>faturaIdsTodas.add(id));
+  }
+  if(!lancamentoIds.length) return {ok:false, msg:'Não há valores a lançar.'};
+
+  faturaIdsTodas.forEach(id=>{
+    const f = DBHotel.faturas.find(x=>x.id===id);
+    if(f) f.lancado = true;
+  });
+
+  if(!DBHotel.fechosCaixaHotel) DBHotel.fechosCaixaHotel = [];
+  DBHotel.fechosCaixaHotel.push({
+    id: uidHotel(),
+    data,
+    linhas: linhas.filter(l=>Number(l.valor)>0).map(l=>({formaPagamento:l.formaPagamento, conta:l.conta, tipoVenda:l.tipoVenda, valor:Number(l.valor)||0})),
+    total: linhas.reduce((s,l)=>s+(Number(l.valor)||0),0),
+    lancamentoIds,
+    criadoEm: new Date().toISOString()
+  });
+
+  await saveDBHotel();
+  return {ok:true, lancamentoIds};
 }
 
 /* ============================================================
@@ -675,10 +871,179 @@ function relatorioForecastHotel(diasFrente=14){
   return relatorioOcupacaoHotel(hoje, fim.toISOString().slice(0,10));
 }
 
-/* Chegadas e partidas previstas para uma data específica (default: hoje) */
+/* ---------- Chegadas e partidas previstas para uma data específica (default: hoje) */
 function relatorioChegadasPartidasHotel(dataStr){
   const data = dataStr || new Date().toISOString().slice(0,10);
   const chegadas = DBHotel.reservas.filter(r => r.checkinPrevisto === data && r.estado !== 'cancelada');
   const partidas = DBHotel.reservas.filter(r => r.checkoutPrevisto === data && r.estado !== 'cancelada');
   return {data, chegadas, partidas};
+}
+
+/* ============================================================
+   RELATÓRIO OPERACIONAL DIÁRIO (fim do dia)
+   ------------------------------------------------------------
+   Junta, numa só consulta/impressão, o que os outros
+   departamentos precisam de saber para preparar o dia seguinte:
+     - Cozinha/Buffet: quantos hóspedes estão hospedados (por
+       quarto), para calcular quantidades.
+     - Limpeza: que quartos estiveram ocupados (limpeza de
+       manutenção) e que quartos tiveram check-out (limpeza
+       completa/turnover).
+     - Serviços Gerais: que quartos têm uma intervenção de
+       manutenção pendente, e de que tipo.
+   ============================================================ */
+const TIPOS_MANUTENCAO_HOTEL = ['Elétrica','Canalização','Ar Condicionado','Mobiliário','Pintura','Eletrodomésticos','Outro'];
+
+function relatorioOperacionalDiarioHotel(data){
+  const dataRef = data || new Date().toISOString().slice(0,10);
+
+  // Hóspedes em casa nesta data: check-in já feito, check-out ainda não.
+  const hospedesEmCasa = DBHotel.reservas
+    .filter(r => r.estado === 'checkin')
+    .map(r => {
+      const quarto = DBHotel.quartos.find(q => q.id === r.quartoId);
+      const tipo = DBHotel.tiposQuarto.find(t => t.id === r.tipoId);
+      return {
+        reservaId: r.id,
+        hospedeNome: r.hospedeNome,
+        quartoId: r.quartoId,
+        quartoNumero: quarto ? quarto.numero : r.quartoId,
+        tipoQuarto: tipo ? tipo.nome : '-',
+        numHospedes: Number(r.numHospedes) || 1,
+        checkinReal: r.checkinReal,
+        checkoutPrevisto: r.checkoutPrevisto
+      };
+    })
+    .sort((a,b) => String(a.quartoNumero).localeCompare(String(b.quartoNumero), undefined, {numeric:true}));
+  const totalHospedes = hospedesEmCasa.reduce((s,h) => s + h.numHospedes, 0);
+
+  // Quartos com check-out feito nesta data — precisam de limpeza completa (turnover).
+  const quartosCheckoutHoje = DBHotel.reservas
+    .filter(r => r.estado === 'checkout' && r.checkoutReal === dataRef)
+    .map(r => {
+      const quarto = DBHotel.quartos.find(q => q.id === r.quartoId);
+      return {
+        reservaId: r.id,
+        hospedeNome: r.hospedeNome,
+        quartoId: r.quartoId,
+        quartoNumero: quarto ? quarto.numero : r.quartoId
+      };
+    });
+
+  // Manutenção pendente: bloqueios de tipo "manutencao" ativos nesta data.
+  const manutencaoPendente = DBHotel.bloqueios
+    .filter(b => b.tipo === 'manutencao' && dataRef >= b.dataIni && dataRef < b.dataFim)
+    .map(b => {
+      const quarto = DBHotel.quartos.find(q => q.id === b.quartoId);
+      return {
+        quartoId: b.quartoId,
+        quartoNumero: quarto ? quarto.numero : b.quartoId,
+        subtipo: b.subtipo || 'Outro',
+        observacoes: b.observacoes || '',
+        dataIni: b.dataIni,
+        dataFim: b.dataFim
+      };
+    });
+
+  return {data: dataRef, hospedesEmCasa, totalHospedes, quartosCheckoutHoje, manutencaoPendente};
+}
+
+/* Cria o bloqueio de Manutenção associado a um check-out (quando o
+   hóspede assinala que o quarto precisa de intervenção). Reaproveita
+   o mesmo esquema de DBHotel.bloqueios já usado em "🔒 Bloqueios",
+   apenas com o campo extra "subtipo" para identificar o tipo de
+   intervenção nos relatórios dos Serviços Gerais. */
+function criarBloqueioManutencaoHotel(quartoId, subtipo, observacoes, dataIni, diasBloqueio=2){
+  const ini = new Date(dataIni);
+  const fim = new Date(ini);
+  fim.setDate(fim.getDate() + diasBloqueio);
+  const bloqueio = {
+    id: uidHotel(),
+    quartoId,
+    tipo: 'manutencao',
+    subtipo,
+    dataIni,
+    dataFim: fim.toISOString().slice(0,10),
+    observacoes,
+    origem: 'checkout'
+  };
+  DBHotel.bloqueios.push(bloqueio);
+  return bloqueio;
+}
+
+/* ---------- Impressão do Relatório Operacional Diário ----------
+   Mesmo motor de impressão (cabeçalho/secções/assinaturas) do
+   contabilidade.html, com sufixo "Hotel" para não colidir com
+   core.js caso as duas páginas venham a partilhar o mesmo DOM.
+   Requer, do lado do HTML, um <div id="printOverlayHotel"> com
+   <div id="printSheetHotel"> lá dentro (ver hotel.html). */
+function abrirImpressaoHotel(html){
+  const sheet = document.getElementById('printSheetHotel');
+  const overlay = document.getElementById('printOverlayHotel');
+  if(!sheet || !overlay) return;
+  sheet.innerHTML = html;
+  overlay.classList.add('is-open');
+}
+function fecharImpressaoHotel(){
+  document.getElementById('printOverlayHotel')?.classList.remove('is-open');
+}
+function printFieldHotel(label, value){
+  return `<tr><td class="print-label">${label}</td><td>${value}</td></tr>`;
+}
+function printSectionHTMLHotel(heading, rows, highlight){
+  return `<h3 class="print-section-title">${heading}</h3><table class="print-field-table${highlight?' is-highlight':''}"><tbody>${rows.map(([l,v])=>printFieldHotel(l,v)).join('')}</tbody></table>`;
+}
+function printDocHTMLHotel({code, title, subtitle, sections=[], gridHTML='', note='', signatures=[]}){
+  const head = `
+  <div class="print-head">
+    <div><div class="print-brand">🏨 ZOOM'S LODGE</div><div class="print-brand-sub">Hotelaria — Operações</div></div>
+    <div class="print-doc-meta"><div class="print-code">${code}</div><div class="print-title">${title}</div></div>
+  </div>
+  <p class="print-subtitle">${subtitle}</p>`;
+  const sectionsHTML = sections.map(s => printSectionHTMLHotel(s.heading, s.rows, s.highlight)).join('');
+  const noteHTML = note ? `<div class="print-note">${note}</div>` : '';
+  const sigHTML = signatures.length ? `<div class="print-signatures">${signatures.map(s=>`<div class="print-sig"><div class="print-sig-line"></div><span>${s}</span></div>`).join('')}</div>` : '';
+  return head + sectionsHTML + (gridHTML||'') + noteHTML + sigHTML;
+}
+
+/* Monta e abre, numa única folha, o Relatório Operacional Diário
+   (Cozinha/Buffet + Limpeza + Serviços Gerais) para a data indicada. */
+function imprimirRelatorioOperacionalHotel(data){
+  const r = relatorioOperacionalDiarioHotel(data);
+
+  const gridCozinha = `
+    <h3 class="print-section-title">🍽️ Cozinha / Buffet — Hóspedes em Casa (${r.totalHospedes})</h3>
+    <table class="print-grid-table">
+      <thead><tr><th>Quarto</th><th>Hóspede</th><th>Tipo de Quarto</th><th class="num">Nº Hóspedes</th></tr></thead>
+      <tbody>${r.hospedesEmCasa.length ? r.hospedesEmCasa.map(h=>`<tr><td>${h.quartoNumero}</td><td>${h.hospedeNome}</td><td>${h.tipoQuarto}</td><td class="num">${h.numHospedes}</td></tr>`).join('') : '<tr><td colspan="4">Sem hóspedes em casa nesta data.</td></tr>'}
+      <tr style="font-weight:bold;"><td colspan="3">TOTAL DE HÓSPEDES</td><td class="num">${r.totalHospedes}</td></tr>
+      </tbody>
+    </table>`;
+
+  const gridLimpeza = `
+    <h3 class="print-section-title">🧹 Limpeza — Controlo de Quartos</h3>
+    <table class="print-grid-table">
+      <thead><tr><th>Quarto</th><th>Hóspede</th><th>Tipo de Limpeza</th></tr></thead>
+      <tbody>
+        ${r.hospedesEmCasa.map(h=>`<tr><td>${h.quartoNumero}</td><td>${h.hospedeNome}</td><td>Limpeza de manutenção (ocupado)</td></tr>`).join('')}
+        ${r.quartosCheckoutHoje.map(q=>`<tr><td>${q.quartoNumero}</td><td>${q.hospedeNome}</td><td>Limpeza completa (check-out)</td></tr>`).join('')}
+        ${(!r.hospedesEmCasa.length && !r.quartosCheckoutHoje.length) ? '<tr><td colspan="3">Sem quartos a assinalar.</td></tr>' : ''}
+      </tbody>
+    </table>`;
+
+  const gridManutencao = `
+    <h3 class="print-section-title">🔧 Serviços Gerais — Manutenção Pendente</h3>
+    <table class="print-grid-table">
+      <thead><tr><th>Quarto</th><th>Tipo de Intervenção</th><th>Observações</th><th>Período</th></tr></thead>
+      <tbody>${r.manutencaoPendente.length ? r.manutencaoPendente.map(m=>`<tr><td>${m.quartoNumero}</td><td>${m.subtipo}</td><td>${m.observacoes||'-'}</td><td>${m.dataIni} → ${m.dataFim}</td></tr>`).join('') : '<tr><td colspan="4">Sem intervenções de manutenção pendentes.</td></tr>'}
+      </tbody>
+    </table>`;
+
+  abrirImpressaoHotel(printDocHTMLHotel({
+    code: 'REL-OP-' + r.data,
+    title: 'Relatório Operacional Diário',
+    subtitle: `Resumo de fim do dia para preparação do dia seguinte — Cozinha/Buffet, Limpeza e Serviços Gerais. Data de referência: ${r.data}.`,
+    gridHTML: gridCozinha + gridLimpeza + gridManutencao,
+    signatures: ['Receção · Data/Hora', 'Cozinha (recebido) · Data/Hora', 'Limpeza (recebido) · Data/Hora', 'Serviços Gerais (recebido) · Data/Hora']
+  }));
 }
