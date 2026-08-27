@@ -1,0 +1,2024 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hotelaria — Zoom's Lodge</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="hotel-core.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
+  :root{
+    --verde-escuro:#14232B; --verde:#1F6F68; --verde-claro:#E4F0EE;
+    --castanho:#C89B3C; --creme:#FBF3E1; --bg:#F6F1E7; --card:#ffffff;
+    --texto:#14232B; --muted:#55666E; --borda:#DDD2B8; --vermelho:#A6472E;
+    --gold:#C89B3C; --azul:#3B82F6; --font-display:'Fraunces',Georgia,serif; --font-body:'Inter','Segoe UI',Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--font-body);background:var(--bg);color:var(--texto);}
+  #app{display:flex;min-height:100vh;}
+  nav{width:200px;background:var(--verde-escuro);color:#fff;flex-shrink:0;padding:20px 0;overflow-y:auto;}
+  nav h1{font-size:15px;padding:0 18px 16px;font-family:var(--font-display);font-weight:600;}
+  nav .item{padding:10px 18px;cursor:pointer;font-size:13.5px;opacity:.82;border-left:3px solid transparent;color:#fff;}
+  nav .item:hover{opacity:1;background:rgba(246,241,231,.07);}
+  nav .item.active{opacity:1;background:var(--verde);border-left:3px solid var(--gold);font-weight:600;}
+  main{flex:1;padding:24px 28px;overflow-y:auto;}
+  h2{background:var(--verde-escuro);color:#fff;font-family:var(--font-display);font-weight:600;
+     padding:12px 20px;margin:0 0 16px;border-radius:8px;font-size:17px;}
+  h3{color:var(--verde-escuro);font-size:14px;margin:16px 0 8px;font-weight:600;}
+  .card{background:var(--card);border:1px solid var(--borda);border-radius:10px;padding:16px 20px;margin-bottom:16px;}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:10px 0 3px;text-transform:uppercase;letter-spacing:.03em;}
+  input,select,textarea{width:100%;padding:9px 11px;border:1px solid var(--borda);border-radius:7px;font-size:14px;font-family:var(--font-body);background:#fff;}
+  textarea{min-height:60px;}
+  button{margin-top:16px;padding:11px 22px;background:var(--verde);color:#fff;border:none;
+         border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;}
+  button:hover{background:var(--verde-escuro);}
+  button.secondary{background:var(--muted);margin-left:8px;}
+  button.secondary:hover{background:var(--verde-escuro);}
+  button.danger{background:var(--vermelho);}
+  button.danger:hover{background:#8B3B2A;}
+  button.small{padding:7px 14px;font-size:12px;margin:4px 4px 4px 0;}
+  
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--borda);}
+  th{color:var(--muted);text-transform:uppercase;font-size:11.5px;letter-spacing:.03em;}
+  
+  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;}
+  .badge.confirmada{background:var(--verde-claro);color:var(--verde);}
+  .badge.provisoria{background:#FEF3C7;color:#92400E;}
+  .badge.garantida{background:#DBEAFE;color:#1E40AF;}
+  .badge.waitlist{background:#F3E8FF;color:#6B21A8;}
+  .badge.checkin{background:#EDE7F9;color:#6B4FA5;}
+  .badge.checkout{background:#F6F1E7;color:var(--muted);}
+  .badge.cancelada{background:#F6E4E0;color:var(--vermelho);}
+  .badge.bloqueado{background:#E5E7EB;color:var(--muted);}
+  .badge.livre{background:#D1FAE5;color:#065F46;}
+  
+  .grid-ocupacao{display:grid;gap:8px;margin:16px 0;}
+  .grid-ocupacao .header{display:grid;grid-template-columns:120px repeat(auto-fit,minmax(80px,1fr));gap:8px;margin-bottom:8px;}
+  .grid-ocupacao .header-quarto{padding:8px;background:var(--verde-escuro);color:#fff;border-radius:4px;font-size:12px;font-weight:600;}
+  .grid-ocupacao .header-data{padding:8px;background:var(--verde);color:#fff;border-radius:4px;font-size:11px;font-weight:600;text-align:center;}
+  .grid-ocupacao .linha{display:grid;grid-template-columns:120px repeat(auto-fit,minmax(80px,1fr));gap:8px;align-items:center;}
+  .grid-ocupacao .label-quarto{padding:8px;background:var(--creme);border-radius:4px;font-size:12px;font-weight:500;}
+  .grid-ocupacao .celula{padding:8px;border-radius:4px;border:1px solid var(--borda);text-align:center;font-size:11px;cursor:pointer;transition:background .2s;}
+  .grid-ocupacao .celula:hover{background:var(--creme);}
+  .grid-ocupacao .celula.livre{background:#D1FAE5;color:#065F46;font-weight:600;}
+  .grid-ocupacao .celula.confirmada{background:#D1FAE5;color:#065F46;}
+  .grid-ocupacao .celula.provisoria{background:#FEF3C7;color:#92400E;}
+  .grid-ocupacao .celula.garantida{background:#DBEAFE;color:#1E40AF;}
+  .grid-ocupacao .celula.waitlist{background:#F3E8FF;color:#6B21A8;}
+  .grid-ocupacao .celula.bloqueado{background:#E5E7EB;color:var(--muted);font-weight:600;}
+  
+  .info-box{background:var(--verde-claro);border-left:4px solid var(--verde);padding:12px 16px;border-radius:4px;margin:12px 0;font-size:13px;}
+  
+  .modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:1000;align-items:center;justify-content:center;}
+  .modal.ativo{display:flex;}
+  .modal-content{background:white;border-radius:12px;padding:28px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,.2);}
+  .modal-content h3{margin-top:0;}
+  .modal-close{float:right;cursor:pointer;font-size:24px;color:var(--muted);}
+  .modal-close:hover{color:var(--texto);}
+  
+  .voltar{position:fixed;top:14px;right:18px;background:var(--verde-escuro);color:#fff;
+          padding:8px 16px;border-radius:8px;text-decoration:none;font-size:13px;z-index:999;}
+  
+  .grid-inline{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .grid-inline.col3{grid-template-columns:1fr 1fr 1fr;}
+
+  /* ---------- Impressão de Relatórios (Relatório Operacional Diário, etc.) ---------- */
+  #printOverlayHotel{display:none;position:fixed;inset:0;background:#6B6255;z-index:2000;overflow-y:auto;padding:28px 0 60px;}
+  #printOverlayHotel.is-open{display:block;}
+  .print-toolbar{max-width:800px;margin:0 auto 16px;display:flex;gap:10px;justify-content:flex-end;padding:0 8px;}
+  .print-toolbar button{padding:9px 18px;}
+  .print-sheet{max-width:800px;margin:0 auto;background:#fff;padding:56px 60px;box-shadow:0 8px 30px rgba(0,0,0,.25);font-family:var(--font-body);color:var(--texto);}
+  .print-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--verde-escuro);padding-bottom:14px;}
+  .print-brand{font-family:var(--font-display);font-weight:600;font-size:22px;}
+  .print-brand-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+  .print-doc-meta{text-align:right;}
+  .print-code{font-size:12px;color:var(--gold);font-weight:700;}
+  .print-title{font-family:var(--font-display);font-weight:600;font-size:17px;}
+  .print-subtitle{font-size:13px;color:var(--muted);font-style:italic;margin:12px 0 18px;}
+  .print-section-title{font-family:var(--font-display);font-size:13px;font-weight:600;color:var(--verde);text-transform:uppercase;letter-spacing:.06em;margin:24px 0 8px;}
+  .print-field-table{width:100%;border-collapse:collapse;border:1px solid var(--borda);margin-bottom:4px;}
+  .print-field-table td{border:1px solid var(--borda);padding:8px 12px;font-size:13.5px;}
+  .print-field-table .print-label{background:var(--bg);font-weight:600;width:38%;}
+  .print-field-table.is-highlight{border-color:var(--gold);}
+  .print-field-table.is-highlight .print-label{background:var(--creme);}
+  .print-grid-table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:6px;}
+  .print-grid-table th{background:var(--verde-escuro);color:#fff;padding:6px 5px;font-size:10.5px;text-align:left;}
+  .print-grid-table td{border:1px solid var(--borda);padding:5px;}
+  .print-grid-table .num{text-align:right;}
+  .print-note{margin-top:16px;padding:10px 14px;background:var(--creme);border:1px solid var(--gold);border-radius:6px;font-size:12.5px;font-style:italic;}
+  .print-signatures{display:flex;gap:32px;margin-top:56px;flex-wrap:wrap;}
+  .print-sig{flex:1;min-width:160px;}
+  .print-sig-line{border-top:1px solid var(--verde-escuro);margin-bottom:6px;}
+  .print-sig span{font-size:12px;color:var(--muted);}
+  @media print{
+    body *{visibility:hidden;}
+    #printOverlayHotel, #printOverlayHotel *{visibility:visible;}
+    #printOverlayHotel{position:absolute;inset:0;background:#fff;padding:0;}
+    .print-toolbar{display:none;}
+    .print-sheet{box-shadow:none;padding:0;max-width:none;}
+  }
+</style>
+</head>
+<body>
+<a class="voltar" href="index.html">← Voltar</a>
+<div id="app">
+  <nav>
+    <h1>🏨 Zoom's Lodge</h1>
+    <div class="item" data-view="nova" onclick="mudarView('nova')">➕ Nova Reserva</div>
+    <div class="item" data-view="lista" onclick="mudarView('lista')">📋 Reservas</div>
+    <div class="item" data-view="checkin" onclick="mudarView('checkin')">🔑 Check-in/Out</div>
+    <div class="item" data-view="calendario" onclick="mudarView('calendario')">📅 Calendário</div>
+    <div class="item" data-view="disponibilidade" onclick="mudarView('disponibilidade')">🗓️ Disponibilidade</div>
+    <div class="item" data-view="bloqueios" onclick="mudarView('bloqueios')">🔒 Bloqueios</div>
+    <div class="item" data-view="tarifacao" onclick="mudarView('tarifacao')">💰 Tarifação</div>
+    <div class="item" data-view="hospedes" onclick="mudarView('hospedes')">👥 Hóspedes</div>
+    <div class="item" data-view="quartos" onclick="mudarView('quartos')">🛏️ Quartos</div>
+    <div class="item" data-view="faturacao" onclick="mudarView('faturacao')">🧾 Faturação/Split</div>
+    <div class="item" data-view="lancamentos" onclick="mudarView('lancamentos')">📝 Lançamentos</div>
+    <div class="item" data-view="canais" onclick="mudarView('canais')">🔗 Canais &amp; Distribuição</div>
+    <div class="item" data-view="comunicacoes" onclick="mudarView('comunicacoes')">✉️ Comunicações</div>
+    <div class="item" data-view="relatorios" onclick="mudarView('relatorios')">📊 Relatórios</div>
+  </nav>
+  <main id="main">A carregar...</main>
+</div>
+
+<!-- Modal para editar/visualizar reserva -->
+<div id="modalReserva" class="modal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="fecharModalReserva()">×</span>
+    <h3 id="tituloModal">Editar Reserva</h3>
+    <form id="formEditaReserva">
+      <input type="hidden" name="reservaId">
+      <label>Nome do hóspede</label>
+      <input name="hospedeNome" required>
+      <label>Nº Doc/BI</label>
+      <input name="hospedeDoc">
+      <label>Contacto</label>
+      <input name="hospedeContacto">
+      <label>Nº de Hóspedes</label>
+      <input type="number" name="numHospedes" min="1" value="1">
+      <label>Tipo de quarto</label>
+      <select name="tipoId" id="selectTipoEdit" required></select>
+      <label>Check-in previsto</label>
+      <input type="date" name="checkinPrevisto" required>
+      <label>Check-out previsto</label>
+      <input type="date" name="checkoutPrevisto" required>
+      <label>Estado da reserva</label>
+      <select name="estado">
+        <option value="provisoria">Provisória</option>
+        <option value="confirmada">Confirmada</option>
+        <option value="garantida">Garantida</option>
+        <option value="waitlist">Lista de Espera</option>
+      </select>
+      <label>Sinal / Depósito (Kz)</label>
+      <input type="number" name="sinal" value="0">
+      <label>Observações</label>
+      <textarea name="observacoes"></textarea>
+      <button type="submit">Guardar Alterações</button>
+      <button type="button" onclick="imprimirTalaoReservaHotel(document.getElementById('formEditaReserva').reservaId.value)">🖨️ Imprimir Talão</button>
+      <button type="button" class="danger" onclick="apagarReserva()">Cancelar Reserva</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal para novo bloqueio -->
+<div id="modalBloqueio" class="modal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="fecharModalBloqueio()">×</span>
+    <h3>Criar Bloqueio</h3>
+    <form id="formBloqueio">
+      <label>Quarto</label>
+      <select name="quartoId" required></select>
+      <label>Tipo de bloqueio</label>
+      <select name="tipo" required>
+        <option value="manutencao">Manutenção</option>
+        <option value="limpeza">Limpeza</option>
+        <option value="vip">Reservado (VIP)</option>
+      </select>
+      <label>Data início</label>
+      <input type="date" name="dataIni" required>
+      <label>Data fim</label>
+      <input type="date" name="dataFim" required>
+      <label>Observações</label>
+      <textarea name="observacoes"></textarea>
+      <button type="submit">Guardar Bloqueio</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal para Check-out -->
+<div id="modalCheckout" class="modal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="fecharModalCheckout()">×</span>
+    <h3>🔓 Check-out</h3>
+    <form id="formCheckout">
+      <input type="hidden" name="reservaId">
+      <div id="resumoCheckout"></div>
+      <label>Data checkout real</label>
+      <input type="date" name="checkoutReal" required>
+      <label>Late check-out? (extra)</label>
+      <div class="grid-inline">
+        <input type="checkbox" name="lateCheckout" id="chkLate">
+        <label for="chkLate" style="margin:0">Sim, cobrar taxa extra</label>
+      </div>
+      <label>Notas de checkout</label>
+      <textarea name="notasCheckout" placeholder="Danos, devoluções, observações..."></textarea>
+
+      <div class="grid-inline">
+        <input type="checkbox" name="dividirConta" id="chkDividir" onchange="alternarSplitCheckout()">
+        <label for="chkDividir" style="margin:0">Dividir a conta (várias faturas/formas de pagamento)</label>
+      </div>
+      <div id="areaSplitCheckout" style="display:none"></div>
+
+      <div id="areaPagamentoUnico">
+        <div class="grid-inline col3">
+          <div>
+            <label>Tipo de Venda (Categoria de Receita)</label>
+            <select name="tipoVendaUnica" id="selTipoVendaUnica">
+              <option value="Hospedagem">Hospedagem</option>
+              <option value="Restauração">Restauração</option>
+              <option value="Bar">Bar</option>
+              <option value="Outros Serviços">Outros Serviços</option>
+            </select>
+          </div>
+          <div>
+            <label>Forma de Pagamento</label>
+            <select name="formaPagamentoUnica" id="selFormaPagamentoUnica" onchange="atualizarContaUnica()"></select>
+          </div>
+          <div id="areaContaUnica">
+            <label>Conta</label>
+            <select name="contaUnica" id="selContaUnica"></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-inline">
+        <input type="checkbox" name="precisaManutencao" id="chkManutencao" onchange="alternarManutencaoCheckout()">
+        <label for="chkManutencao" style="margin:0">🔧 Quarto precisa de intervenção/manutenção</label>
+      </div>
+      <div id="areaManutencaoCheckout" style="display:none">
+        <div class="grid-inline">
+          <div>
+            <label>Tipo de intervenção</label>
+            <select name="tipoManutencao" id="selTipoManutencao"></select>
+          </div>
+          <div>
+            <label>Dias de bloqueio previstos</label>
+            <input type="number" name="diasManutencao" value="2" min="1">
+          </div>
+        </div>
+        <label>Observações para os Serviços Gerais</label>
+        <textarea name="obsManutencao" placeholder="Ex: torneira do WC a pingar, ar condicionado sem gás..."></textarea>
+      </div>
+
+      <button type="submit">Confirmar Check-out e Lançar na Tesouraria</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal Conta Corrente (Folio) -->
+<div id="modalFolio" class="modal">
+  <div class="modal-content" style="max-width:640px">
+    <span class="modal-close" onclick="fecharModalFolio()">×</span>
+    <h3 id="tituloFolio">📒 Conta Corrente (Folio)</h3>
+    <div id="corpoFolio"></div>
+  </div>
+</div>
+
+<!-- Modal Sazonalidade -->
+<div id="modalSazonalidade" class="modal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="fecharModalSazonalidade()">×</span>
+    <h3>Adicionar Período de Sazonalidade</h3>
+    <form id="formSazonalidade">
+      <label>Nome do período</label>
+      <input name="nome" placeholder="Ex: Verão, High Season" required>
+      <div class="grid-inline">
+        <div>
+          <label>Data início</label>
+          <input type="date" name="dataIni" required>
+        </div>
+        <div>
+          <label>Data fim</label>
+          <input type="date" name="dataFim" required>
+        </div>
+      </div>
+      <label>Multiplicador de preço</label>
+      <input type="number" name="multiplicador" step="0.1" value="1.0" min="0.1" required>
+      <div class="info-box">Ex: 1.5 = +50% no preço base | 0.8 = -20% no preço base</div>
+      <button type="submit">Guardar</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal para Cupom -->
+<div id="modalCupom" class="modal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="fecharModalCupom()">×</span>
+    <h3>Criar Cupom de Desconto</h3>
+    <form id="formCupom">
+      <div class="grid-inline">
+        <div>
+          <label>Código</label>
+          <input name="codigo" placeholder="PROMO2024" required>
+        </div>
+        <div>
+          <label>Desconto (%)</label>
+          <input type="number" name="desconto" min="1" max="100" required>
+        </div>
+      </div>
+      <div class="grid-inline">
+        <div>
+          <label>Data expiração</label>
+          <input type="date" name="dataExp" required>
+        </div>
+        <div>
+          <label>Nº máximo de usos</label>
+          <input type="number" name="usos_max" value="50" min="1">
+        </div>
+      </div>
+      <button type="submit">Criar Cupom</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal para Perfil de Hóspede -->
+<div id="modalPerfilHospede" class="modal">
+  <div class="modal-content">
+    <span class="modal-close" onclick="fecharModalPerfilHospede()">×</span>
+    <h3 id="tituloPerfilHospede">Perfil do Hóspede</h3>
+    <div id="conteudoPerfilHospede"></div>
+  </div>
+</div>
+
+<!-- Overlay de Impressão (Relatório Operacional Diário, etc.) -->
+<div id="printOverlayHotel">
+  <div class="print-toolbar">
+    <button onclick="window.print()">🖨️ Imprimir</button>
+    <button class="secondary" onclick="fecharImpressaoHotel()">Fechar</button>
+  </div>
+  <div class="print-sheet" id="printSheetHotel"></div>
+</div>
+
+<script>
+let viewAtual = 'nova';
+let filtroTipo = null;
+let dataRelatorioOperacionalHotel = new Date().toISOString().split('T')[0];
+
+async function iniciar(){
+  await carregarDadosHotel();
+  atualizarFilaComunicacoesHotel();
+  render();
+}
+
+function mudarView(v){
+  viewAtual = v;
+  render();
+}
+
+function render(){
+  document.querySelectorAll('nav .item').forEach(el=>{
+    el.classList.toggle('active', el.dataset.view === viewAtual);
+  });
+  const main = document.getElementById('main');
+  if(viewAtual === 'nova') main.innerHTML = viewNovaReserva();
+  else if(viewAtual === 'lista') main.innerHTML = viewListaReservas();
+  else if(viewAtual === 'checkin') main.innerHTML = viewCheckInOut();
+  else if(viewAtual === 'calendario') main.innerHTML = viewCalendario();
+  else if(viewAtual === 'disponibilidade') main.innerHTML = viewDisponibilidade();
+  else if(viewAtual === 'bloqueios') main.innerHTML = viewBloqueios();
+  else if(viewAtual === 'tarifacao') main.innerHTML = viewTarifacao();
+  else if(viewAtual === 'hospedes') main.innerHTML = viewHospedes();
+  else if(viewAtual === 'quartos') main.innerHTML = viewQuartos();
+  else if(viewAtual === 'faturacao') main.innerHTML = viewFaturacao();
+  else if(viewAtual === 'lancamentos') main.innerHTML = viewLancamentosHotel();
+  else if(viewAtual === 'canais') main.innerHTML = viewCanaisDistribuicao();
+  else if(viewAtual === 'comunicacoes') main.innerHTML = viewComunicacoes();
+  else if(viewAtual === 'relatorios') main.innerHTML = viewRelatorios();
+  ligarEventos();
+}
+
+/* ---------- Nova Reserva ---------- */
+function viewNovaReserva(){
+  return `<h2>➕ Nova Reserva</h2>
+  <div class="card">
+    <h3>Dados do hóspede</h3>
+    <form id="formReserva">
+      <div class="grid-inline">
+        <div>
+          <label>Nome do hóspede</label>
+          <input name="hospedeNome" required>
+        </div>
+        <div>
+          <label>Nº Doc/BI</label>
+          <input name="hospedeDoc">
+        </div>
+      </div>
+      <div class="grid-inline">
+        <div>
+          <label>Contacto</label>
+          <input name="hospedeContacto">
+        </div>
+        <div>
+          <label>Email</label>
+          <input type="email" name="hospedeEmail">
+        </div>
+      </div>
+      <label>Nº de Hóspedes (adultos + crianças)</label>
+      <input type="number" name="numHospedes" value="1" min="1" required>
+      <label>Preferências/Notas (alergias, cama extra, vista)</label>
+      <textarea name="preferencias" placeholder="Ex: Alergia a nozes, quarto com vista para rua, cama extra"></textarea>
+      
+      <h3>Acomodação</h3>
+      <div class="grid-inline col3">
+        <div>
+          <label>Tipo de quarto</label>
+          <select name="tipoId" id="selTipo" required>${DBHotel.tiposQuarto.map(t=>`<option value="${t.id}">${t.nome}</option>`).join('')}</select>
+        </div>
+        <div>
+          <label>Check-in</label>
+          <input type="date" name="checkinPrevisto" id="inCheckin" required>
+        </div>
+        <div>
+          <label>Check-out</label>
+          <input type="date" name="checkoutPrevisto" id="inCheckout" required>
+        </div>
+      </div>
+      
+      <h3>Tarifação</h3>
+      <div class="grid-inline col3">
+        <div>
+          <label>Plano tarifário</label>
+          <select name="planoId">${DBHotel.planosTarifarios.map(p=>`<option value="${p.id}">${p.nome} (-${p.desconto}%)</option>`).join('')}</select>
+        </div>
+        <div>
+          <label>Canal</label>
+          <select name="canalId">${DBHotel.canais.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}</select>
+        </div>
+        <div>
+          <label>Desconto adicional (%)</label>
+          <input type="number" name="descontoAd" value="0" min="0" max="100">
+        </div>
+      </div>
+      
+      <div class="grid-inline">
+        <div>
+          <label>Cupom (opcional)</label>
+          <input name="cupomCodigo" placeholder="Código do cupom">
+        </div>
+        <div>
+          <label>Estado</label>
+          <select name="estado">
+            <option value="provisoria">Provisória</option>
+            <option value="confirmada">Confirmada</option>
+            <option value="garantida">Garantida</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="info-box" id="resumoTarifa">
+        <strong>Tarifa estimada:</strong> Preencha os dados acima
+      </div>
+      
+      <label>Sinal / Depósito (Kz)</label>
+      <input type="number" name="sinal" value="0">
+      
+      <button type="submit">Guardar Reserva</button>
+    </form>
+  </div>`;
+}
+
+/* ---------- Check-in / Check-out ---------- */
+function viewCheckInOut(){
+  const reservasProximas = DBHotel.reservas
+    .filter(r => r.estado !== 'cancelada' && r.estado !== 'checkin' && r.estado !== 'checkout')
+    .sort((a,b) => a.checkinPrevisto.localeCompare(b.checkinPrevisto))
+    .slice(0, 10);
+  
+  const comCheckinReal = DBHotel.reservas.filter(r => r.checkinReal && !r.checkoutReal);
+  
+  return `<h2>🔑 Check-in / Check-out</h2>
+  
+  <div class="card">
+    <h3>✈️ Check-in Rápido</h3>
+    <form id="formCheckin">
+      <div class="grid-inline">
+        <div>
+          <label>Buscar reserva por hóspede</label>
+          <input list="listaReservas" name="buscar" placeholder="Nome ou documento">
+          <datalist id="listaReservas">
+            ${reservasProximas.map(r => `<option value="${r.hospedeNome} (${r.checkinPrevisto})">`).join('')}
+          </datalist>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button type="button" onclick="buscarReservaCheckin()">Procurar</button>
+        </div>
+      </div>
+    </form>
+    
+    <div id="detalhesCheckin"></div>
+  </div>
+  
+  <div class="card">
+    <h3>🏨 Hóspedes em Alojamento (${comCheckinReal.length})</h3>
+    <table>
+      <thead><tr><th>Hóspede</th><th>Quarto</th><th>Check-in</th><th>Check-out Prev.</th><th>Ações</th></tr></thead>
+      <tbody>
+        ${comCheckinReal.length ? comCheckinReal.map(r => `
+          <tr>
+            <td>${r.hospedeNome}</td>
+            <td>${r.quartoId}</td>
+            <td>${r.checkinReal || '-'}</td>
+            <td>${r.checkoutPrevisto}</td>
+            <td>
+              <button class="small" onclick="abrirCheckout('${r.id}')">🔓 Check-out</button>
+              <button class="small" onclick="abrirModalFolio('${r.id}')">📒 Folio</button>
+            </td>
+          </tr>
+        `).join('') : '<tr><td colspan="5">Sem hóspedes em alojamento.</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* ---------- Lista de Reservas ---------- */
+function viewListaReservas(){
+  const estados = ['confirmada', 'provisoria', 'garantida', 'waitlist', 'cancelada'];
+  const filtros = `<div class="info-box">
+    <strong>Filtrar por estado:</strong>
+    <button class="small" onclick="filtroTipo=null;render()">Todos</button>
+    ${estados.map(e=>`<button class="small" onclick="filtroTipo='${e}';render()" style="opacity:${filtroTipo===e?1:0.6}">${e}</button>`).join('')}
+  </div>`;
+  
+  let linhas = DBHotel.reservas.slice();
+  if(filtroTipo) linhas = linhas.filter(r => r.estado === filtroTipo);
+  linhas.sort((a,b)=> a.checkinPrevisto.localeCompare(b.checkinPrevisto));
+  
+  return `<h2>📋 Reservas</h2>
+  ${filtros}
+  <div class="card">
+  <table>
+    <thead><tr><th>Hóspede</th><th>Quarto</th><th>Período</th><th>Total</th><th>Sinal</th><th>Estado</th><th>Ações</th></tr></thead>
+    <tbody>
+      ${linhas.length ? linhas.map(r=>`
+        <tr>
+          <td>${r.hospedeNome}</td>
+          <td>${r.quartoId}</td>
+          <td>${r.checkinPrevisto} → ${r.checkoutPrevisto}</td>
+          <td>${r.totalReserva} Kz</td>
+          <td>${r.sinal} Kz</td>
+          <td><span class="badge ${r.estado}">${r.estado}</span></td>
+          <td>
+            <button class="small" onclick="abrirModalReserva('${r.id}')">✏️ Editar</button>
+            <button class="small" onclick="abrirModalFolio('${r.id}')">📒 Folio</button>
+            <button class="small" onclick="imprimirTalaoReservaHotel('${r.id}')">🖨️ Talão</button>
+          </td>
+        </tr>`).join('') : '<tr><td colspan="7">Ainda não há reservas.</td></tr>'}
+    </tbody>
+  </table>
+  </div>`;
+}
+
+/* ---------- Calendário Visual de Ocupação ---------- */
+function viewCalendario(){
+  const hoje = new Date();
+  const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const fim = new Date(inicio.getFullYear(), inicio.getMonth() + 1, 0);
+  
+  const quartosPorTipo = {};
+  DBHotel.tiposQuarto.forEach(t => {
+    quartosPorTipo[t.id] = DBHotel.quartos.filter(q => q.tipoId === t.id);
+  });
+  
+  let html = `<h2>📅 Calendário de Ocupação</h2>`;
+  
+  DBHotel.tiposQuarto.forEach(tipo => {
+    const quartos = quartosPorTipo[tipo.id];
+    if(!quartos.length) return;
+    
+    html += `<h3>${tipo.nome}</h3><div class="grid-ocupacao">`;
+    
+    // Header de datas
+    html += '<div class="header"><div class="header-quarto">Quarto</div>';
+    for(let d = new Date(inicio); d <= fim; d.setDate(d.getDate() + 1)){
+      const dataStr = d.toISOString().split('T')[0];
+      html += `<div class="header-data">${d.getDate()}</div>`;
+    }
+    html += '</div>';
+    
+    // Linhas por quarto
+    quartos.forEach(quarto => {
+      html += `<div class="linha"><div class="label-quarto">${quarto.numero}</div>`;
+      for(let d = new Date(inicio); d <= fim; d.setDate(d.getDate() + 1)){
+        const dataStr = d.toISOString().split('T')[0];
+        const ocupacao = getOcupacaoHotel(dataStr);
+        const estado = ocupacao[quarto.id]?.estado || 'livre';
+        html += `<div class="celula ${estado}" title="${estado}"></div>`;
+      }
+      html += '</div>';
+    });
+    
+    html += '</div>';
+  });
+  
+  return html;
+}
+
+/* ---------- Mapa de Disponibilidade ---------- */
+function viewDisponibilidade(){
+  return `<h2>🗓️ Disponibilidade por Período</h2>
+  <div class="card">
+    <form id="formDisponibilidade">
+      <div class="grid-inline col3">
+        <div>
+          <label>Tipo de quarto</label>
+          <select name="tipoId" required>${DBHotel.tiposQuarto.map(t=>`<option value="${t.id}">${t.nome}</option>`).join('')}</select>
+        </div>
+        <div>
+          <label>Check-in</label>
+          <input type="date" name="checkinPrevisto" required>
+        </div>
+        <div>
+          <label>Check-out</label>
+          <input type="date" name="checkoutPrevisto" required>
+        </div>
+      </div>
+      <button type="submit">Verificar Disponibilidade</button>
+    </form>
+  </div>
+  <div id="resultadoDisponibilidade"></div>`;
+}
+
+/* ---------- Gestão de Bloqueios ---------- */
+function viewBloqueios(){
+  return `<h2>🔒 Bloqueios de Quartos</h2>
+  <div class="card">
+    <button onclick="abrirModalBloqueio()">➕ Novo Bloqueio</button>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Quarto</th><th>Tipo</th><th>Período</th><th>Observações</th><th>Ações</th></tr></thead>
+      <tbody>
+        ${DBHotel.bloqueios.length ? DBHotel.bloqueios.map(b=>{
+          const quarto = DBHotel.quartos.find(q=>q.id===b.quartoId);
+          const tipoNome = b.tipo === 'manutencao' ? `🔧 Manutenção${b.subtipo ? ' — '+b.subtipo : ''}` : b.tipo === 'limpeza' ? '🧹 Limpeza' : '👑 Reservado VIP';
+          return `<tr>
+            <td>${quarto ? quarto.numero : b.quartoId}</td>
+            <td>${tipoNome}</td>
+            <td>${b.dataIni} → ${b.dataFim}</td>
+            <td>${b.observacoes || '-'}</td>
+            <td><button class="small danger" onclick="apagarBloqueio('${b.id}')">🗑️ Remover</button></td>
+          </tr>`;
+        }).join('') : '<tr><td colspan="5">Nenhum bloqueio ativo.</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* ---------- Tarifação e Cupons ---------- */
+function viewTarifacao(){
+  return `<h2>💰 Tarifação</h2>
+  
+  <div class="card">
+    <h3>📊 Planos Tarifários</h3>
+    <table>
+      <thead><tr><th>Plano</th><th>Desconto</th></tr></thead>
+      <tbody>
+        ${DBHotel.planosTarifarios.map(p => `
+          <tr><td>${p.nome}</td><td>-${p.desconto}%</td></tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="card">
+    <h3>🌍 Canais de Distribuição</h3>
+    <table>
+      <thead><tr><th>Canal</th><th>Comissão</th></tr></thead>
+      <tbody>
+        ${DBHotel.canais.map(c => `
+          <tr><td>${c.nome}</td><td>${c.comissao}%</td></tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="card">
+    <h3>📅 Sazonalidade</h3>
+    <button onclick="abrirModalSazonalidade()">➕ Adicionar Período</button>
+    <table style="margin-top:16px">
+      <thead><tr><th>Período</th><th>Datas</th><th>Multiplicador</th><th>Ações</th></tr></thead>
+      <tbody>
+        ${DBHotel.sazonalidade.length ? DBHotel.sazonalidade.map(s => `
+          <tr>
+            <td>${s.nome}</td>
+            <td>${s.dataIni} → ${s.dataFim}</td>
+            <td>${s.multiplicador}x</td>
+            <td><button class="small danger" onclick="apagarSazonalidade('${s.id}')">🗑️</button></td>
+          </tr>
+        `).join('') : '<tr><td colspan="4">Sem períodos de sazonalidade.</td></tr>'}
+      </tbody>
+    </table>
+  </div>
+  
+  <div class="card">
+    <h3>🎟️ Cupons e Promoções</h3>
+    <button onclick="abrirModalCupom()">➕ Novo Cupom</button>
+    <table style="margin-top:16px">
+      <thead><tr><th>Código</th><th>Desconto</th><th>Expira</th><th>Usos</th><th>Ações</th></tr></thead>
+      <tbody>
+        ${DBHotel.cupons.length ? DBHotel.cupons.map(c => `
+          <tr>
+            <td><code>${c.codigo}</code></td>
+            <td>${c.desconto}%</td>
+            <td>${c.dataExp}</td>
+            <td>${c.usos_atuais || 0}/${c.usos_max}</td>
+            <td><button class="small danger" onclick="apagarCupom('${c.id}')">🗑️</button></td>
+          </tr>
+        `).join('') : '<tr><td colspan="5">Sem cupons ativos.</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* ---------- Perfis de Hóspedes ---------- */
+function viewHospedes(){
+  const comEstadias = DBHotel.hospedes.map(h => {
+    const estadias = DBHotel.estadias.filter(e => e.hospedeId === h.id);
+    return {...h, numEstadias: estadias.length, diasTotais: estadias.reduce((a,b) => a + b.noites, 0)};
+  }).sort((a,b) => (b.totalEstadias || 0) - (a.totalEstadias || 0));
+  
+  return `<h2>👥 Perfis de Hóspedes</h2>
+  
+  <div class="card">
+    <form id="formBuscaHospede">
+      <div class="grid-inline">
+        <input name="busca" placeholder="Procurar por nome ou documento">
+        <button type="submit">Procurar</button>
+      </div>
+    </form>
+  </div>
+  
+  <div class="card">
+    <h3>Hóspedes Registados (${DBHotel.hospedes.length})</h3>
+    <table>
+      <thead><tr><th>Nome</th><th>Contacto</th><th>Estadias</th><th>Dias</th><th>Fidelização</th><th>Ações</th></tr></thead>
+      <tbody>
+        ${comEstadias.length ? comEstadias.map(h => `
+          <tr>
+            <td>${h.nome}</td>
+            <td>${h.contacto}</td>
+            <td>${h.totalEstadias || 0}</td>
+            <td>${h.diasTotais || 0}</td>
+            <td>
+              <span class="badge" style="background:${h.fidelizacao === 'platina' ? '#C0C0C0' : h.fidelizacao === 'ouro' ? '#FFD700' : h.fidelizacao === 'prata' ? '#C0C0C0' : '#CD7F32'};color:#000">
+                ${h.fidelizacao.toUpperCase()}
+              </span>
+            </td>
+            <td><button class="small" onclick="abrirPerfilHospede('${h.id}')">👁️ Ver</button></td>
+          </tr>
+        `).join('') : '<tr><td colspan="6">Nenhum hóspede registado.</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* ---------- Gestão de Quartos ---------- */
+function viewQuartos(){
+  return `<h2>🛏️ Quartos</h2>
+  <div class="card">
+    <form id="formQuarto">
+      <div class="grid-inline">
+        <div>
+          <label>Número do quarto</label>
+          <input name="numero" required>
+        </div>
+        <div>
+          <label>Tipo</label>
+          <select name="tipoId" required>${DBHotel.tiposQuarto.map(t=>`<option value="${t.id}">${t.nome}</option>`).join('')}</select>
+        </div>
+      </div>
+      <button type="submit">Adicionar Quarto</button>
+    </form>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Número</th><th>Tipo</th><th>Capacidade</th><th>Estado</th></tr></thead>
+      <tbody>
+        ${DBHotel.quartos.length ? DBHotel.quartos.map(q=>{
+          const tipo = DBHotel.tiposQuarto.find(t=>t.id===q.tipoId);
+          return `<tr><td>${q.numero}</td><td>${tipo?tipo.nome:q.tipoId}</td><td>${tipo?tipo.capacidade:'-'}</td><td><span class="badge ${q.estado}">${q.estado}</span></td></tr>`;
+        }).join('') : '<tr><td colspan="4">Ainda não há quartos registados.</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* ---------- Faturação / Split de Contas ---------- */
+function viewFaturacao(){
+  const faturas = DBHotel.faturas.slice().sort((a,b)=> b.dataEmissao.localeCompare(a.dataEmissao));
+  return `<h2>🧾 Faturação / Split de Contas</h2>
+  <div class="info-box">
+    As faturas são geradas automaticamente no check-out (folha 📒 Folio de cada reserva).
+    Quando a conta é dividida, cada parte aparece aqui como uma fatura própria, já lançada na Tesouraria.
+  </div>
+  <div class="card">
+    <h3>Faturas emitidas (${faturas.length})</h3>
+    <table>
+      <thead><tr><th>Nº</th><th>Data</th><th>Hóspede</th><th>Itens</th><th>Total</th><th>Forma Pag.</th></tr></thead>
+      <tbody>
+        ${faturas.length ? faturas.map(f => {
+          const reserva = DBHotel.reservas.find(r => r.id === f.reservaId);
+          return `<tr>
+            <td>${f.numero}</td>
+            <td>${f.dataEmissao}</td>
+            <td>${reserva ? reserva.hospedeNome : '-'}</td>
+            <td>${(f.itens||[]).map(i=>i.descricao).join(', ')}</td>
+            <td>${f.total} Kz</td>
+            <td>${f.formaPagamento}</td>
+          </tr>`;
+        }).join('') : '<tr><td colspan="6">Ainda não há faturas emitidas.</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* ---------- Canais e Distribuição ---------- */
+function viewCanaisDistribuicao(){
+  return `<h2>🔗 Canais &amp; Distribuição</h2>
+
+  <div class="card">
+    <h3>Canais configurados</h3>
+    <table>
+      <thead><tr><th>Canal</th><th>Comissão</th></tr></thead>
+      <tbody>
+        ${DBHotel.canais.map(c => `<tr><td>${c.nome}</td><td>${c.comissao}%</td></tr>`).join('')}
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--muted)">Reservas por telefone/e-mail: usa "➕ Nova Reserva" e escolhe o canal "Telefone" ou "E-mail".</p>
+  </div>
+
+  <div class="card">
+    <h3>📅 Exportar calendário de ocupação (iCal)</h3>
+    <p style="font-size:13px">Gera um ficheiro .ics com todos os quartos ocupados/bloqueados. Cola este ficheiro na opção
+    "Sincronizar calendários" do Booking.com, Airbnb ou Expedia para evitar overbooking nesses canais.</p>
+    <button type="button" onclick="baixarICalHotel()">⬇️ Descarregar .ics de ocupação</button>
+  </div>
+
+  <div class="card">
+    <h3>📥 Importar reservas externas (iCal)</h3>
+    <p style="font-size:13px">Cola aqui o link ou o conteúdo do ficheiro .ics exportado pelo Booking/Airbnb/Expedia para essas
+    reservas bloquearem automaticamente o quarto correspondente aqui (evita dupla reserva).</p>
+    <form id="formImportICal">
+      <div class="grid-inline col3">
+        <div>
+          <label>Canal</label>
+          <select name="canalId">
+            ${DBHotel.canais.filter(c=>['booking','airbnb','expedia'].includes(c.id)).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Quarto a bloquear</label>
+          <select name="quartoId">${DBHotel.quartos.map(q=>`<option value="${q.id}">${q.numero}</option>`).join('')}</select>
+        </div>
+        <div>
+          <label>Ficheiro .ics</label>
+          <input type="file" name="arquivoIcs" accept=".ics">
+        </div>
+      </div>
+      <label>Ou cole aqui o conteúdo do .ics</label>
+      <textarea name="conteudoIcs" placeholder="BEGIN:VCALENDAR..."></textarea>
+      <button type="submit">Importar e Bloquear Quarto</button>
+    </form>
+    <div id="resultadoImportIcal"></div>
+    <div class="info-box" style="margin-top:14px">
+      <strong>Nota importante:</strong> uma ligação em tempo real (API oficial) a estas plataformas exige conta de
+      parceiro certificado e credenciais próprias — não é algo que esta página consiga fazer sozinha sem esse acesso.
+      Este import/export por iCal é a forma prática e sem custos de manter os calendários sincronizados.
+    </div>
+  </div>`;
+}
+
+async function submeterImportICal(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const dados = Object.fromEntries(f.entries());
+  const arquivo = f.get('arquivoIcs');
+
+  const processar = async (texto) => {
+    const resultado = importarICalHotel(texto, dados.canalId, dados.quartoId);
+    await saveDBHotel();
+    document.getElementById('resultadoImportIcal').innerHTML =
+      `<div class="info-box">Importado: ${resultado.criados} novo(s) bloqueio(s) de ${resultado.total} evento(s) encontrado(s) no ficheiro.</div>`;
+    toastHotel('Calendário externo importado.');
+    render();
+  };
+
+  if(arquivo && arquivo.size > 0){
+    const texto = await arquivo.text();
+    await processar(texto);
+  } else if(dados.conteudoIcs && dados.conteudoIcs.trim()){
+    await processar(dados.conteudoIcs);
+  } else {
+    alert('Escolhe um ficheiro .ics ou cola o conteúdo.');
+  }
+}
+
+/* ---------- Comunicações Automáticas (fila de e-mails) ---------- */
+let filtroTipoComunicacao = null;
+let filtroEstadoComunicacao = 'pendente';
+
+function viewComunicacoes(){
+  atualizarFilaComunicacoesHotel();
+
+  const nomesTipo = {confirmacao:'✅ Confirmação de Reserva', lembrete_checkin:'⏰ Lembrete de Check-in', feedback:'⭐ Pedido de Feedback'};
+  const nomesEstado = {pendente:'Pendente', enviado:'Enviado', sem_email:'Sem E-mail'};
+
+  let lista = (DBHotel.comunicacoes||[]).slice();
+  if(filtroTipoComunicacao) lista = lista.filter(c => c.tipo === filtroTipoComunicacao);
+  if(filtroEstadoComunicacao) lista = lista.filter(c => c.estado === filtroEstadoComunicacao);
+  lista.sort((a,b) => (a.enviarApartirDe||'').localeCompare(b.enviarApartirDe||''));
+
+  const todas = DBHotel.comunicacoes||[];
+  const totalPendente = todas.filter(c=>c.estado==='pendente').length;
+  const totalSemEmail = todas.filter(c=>c.estado==='sem_email').length;
+  const totalEnviado = todas.filter(c=>c.estado==='enviado').length;
+
+  const hojeStr = new Date().toISOString().split('T')[0];
+
+  return `<h2>✉️ Comunicações Automáticas</h2>
+  <div class="card" style="border:2px solid var(--gold);background:#FFFAED;">
+    <p style="font-size:13px;color:var(--muted)">O sistema prepara sozinho o e-mail de <strong>confirmação de reserva</strong> (ao criar a reserva), o <strong>lembrete antes do check-in</strong> (a partir de ${CONFIG_COMUNICACOES_HOTEL.diasAntesLembreteCheckin} dia(s) antes) e o <strong>pedido de feedback</strong> (a partir de ${CONFIG_COMUNICACOES_HOTEL.diasDepoisFeedback} dia(s) após o check-out). Como esta app não tem servidor de e-mail próprio, "✉️ Enviar" abre o seu cliente de e-mail com a mensagem pronta — não há envio automático em segundo plano; abra esta página regularmente para não perder lembretes com data já chegada.</p>
+    <div class="grid-inline col3" style="margin-top:10px">
+      <div class="info-box"><strong>📬 Pendentes</strong><br><span style="font-size:20px">${totalPendente}</span></div>
+      <div class="info-box"><strong>⚠️ Sem E-mail do Hóspede</strong><br><span style="font-size:20px">${totalSemEmail}</span></div>
+      <div class="info-box"><strong>✔️ Já Enviadas</strong><br><span style="font-size:20px">${totalEnviado}</span></div>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <strong>Filtrar por tipo:</strong>
+    <button class="small" onclick="filtroTipoComunicacao=null;render()" style="opacity:${filtroTipoComunicacao===null?1:0.6}">Todos</button>
+    ${Object.entries(nomesTipo).map(([k,v])=>`<button class="small" onclick="filtroTipoComunicacao='${k}';render()" style="opacity:${filtroTipoComunicacao===k?1:0.6}">${v}</button>`).join('')}
+    <br><br>
+    <strong>Filtrar por estado:</strong>
+    <button class="small" onclick="filtroEstadoComunicacao=null;render()" style="opacity:${filtroEstadoComunicacao===null?1:0.6}">Todos</button>
+    ${Object.entries(nomesEstado).map(([k,v])=>`<button class="small" onclick="filtroEstadoComunicacao='${k}';render()" style="opacity:${filtroEstadoComunicacao===k?1:0.6}">${v}</button>`).join('')}
+  </div>
+
+  <div class="card">
+  <table>
+    <thead><tr><th>A enviar a partir de</th><th>Tipo</th><th>Hóspede</th><th>E-mail</th><th>Mensagem</th><th>Estado</th><th>Ações</th></tr></thead>
+    <tbody>
+      ${lista.length ? lista.map(c=>{
+        const reserva = DBHotel.reservas.find(r => r.id === c.reservaId);
+        const aVencer = c.enviarApartirDe && c.enviarApartirDe <= hojeStr;
+        return `<tr>
+          <td>${c.enviarApartirDe||'—'}${(c.estado==='pendente' && aVencer)?' <span class="badge confirmada">pronta</span>':''}</td>
+          <td>${nomesTipo[c.tipo]||c.tipo}</td>
+          <td>${reserva ? reserva.hospedeNome : '—'}</td>
+          <td>${c.destinatarioEmail || '<span style="color:var(--muted)">sem e-mail</span>'}</td>
+          <td><details><summary>Ver mensagem</summary><p style="font-size:12px"><strong>${c.assunto}</strong></p><pre style="white-space:pre-wrap;font-family:inherit;font-size:12px">${c.corpo}</pre></details></td>
+          <td><span class="badge ${c.estado==='enviado'?'confirmada':(c.estado==='sem_email'?'cancelada':'provisoria')}">${nomesEstado[c.estado]||c.estado}</span></td>
+          <td>
+            ${c.estado!=='enviado' ? `<button class="small" onclick="enviarComunicacaoHotel('${c.id}')" ${c.destinatarioEmail?'':'disabled'}>✉️ Enviar</button>` : ''}
+            ${c.estado!=='enviado' ? `<button class="small" onclick="marcarComunicacaoEnviadaHotel('${c.id}');render()">✔️ Marcar Enviado</button>` : ''}
+            <button class="small danger" onclick="if(confirm('Apagar esta comunicação da fila?')){apagarComunicacaoHotel('${c.id}');render();}">🗑️ Apagar</button>
+          </td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="7">Nenhuma comunicação com estes filtros.</td></tr>'}
+    </tbody>
+  </table>
+  </div>`;
+}
+
+/* ---------- Relatórios ---------- */
+function viewRelatorios(){
+  const hoje = new Date();
+  const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0,10);
+  const fimMes = new Date(hoje.getFullYear(), hoje.getMonth()+1, 0).toISOString().slice(0,10);
+
+  const ocup = relatorioOcupacaoHotel(inicioMes, fimMes);
+  const kpis = relatorioADRRevPARHotel(inicioMes, fimMes);
+  const forecast = relatorioForecastHotel(14);
+  const chegPart = relatorioChegadasPartidasHotel();
+  const opDia = relatorioOperacionalDiarioHotel(dataRelatorioOperacionalHotel);
+
+  return `<h2>📊 Relatórios</h2>
+
+  <div class="card" style="border:2px solid var(--gold);background:#FFFAED;">
+    <h3>🌙 Relatório Operacional Diário (Fim do Dia)</h3>
+    <p style="font-size:13px;color:var(--muted)">Resumo para preparar o dia seguinte: quantos hóspedes estão no hotel (Cozinha/Buffet), que quartos foram usados (Limpeza) e que quartos precisam de intervenção (Serviços Gerais).</p>
+    <label>Data de referência</label>
+    <input type="date" value="${dataRelatorioOperacionalHotel}" onchange="dataRelatorioOperacionalHotel=this.value; render();">
+    <div class="grid-inline col3" style="margin-top:10px">
+      <div class="info-box"><strong>🍽️ Hóspedes em casa</strong><br><span style="font-size:20px">${opDia.totalHospedes}</span></div>
+      <div class="info-box"><strong>🧹 Quartos a assinalar</strong><br><span style="font-size:20px">${opDia.hospedesEmCasa.length + opDia.quartosCheckoutHoje.length}</span></div>
+      <div class="info-box"><strong>🔧 Manutenção pendente</strong><br><span style="font-size:20px">${opDia.manutencaoPendente.length}</span></div>
+    </div>
+    <button onclick="imprimirRelatorioOperacionalHotel(dataRelatorioOperacionalHotel)">🖨️ Imprimir Relatório Operacional</button>
+  </div>
+
+  <div class="card">
+    <h3>Indicadores do mês (${inicioMes} a ${fimMes})</h3>
+    <div class="grid-inline col3">
+      <div class="info-box"><strong>Taxa de Ocupação Média</strong><br><span style="font-size:20px">${ocup.taxaMedia.toFixed(1)}%</span></div>
+      <div class="info-box"><strong>ADR (Tarifa Média Diária)</strong><br><span style="font-size:20px">${kpis.adr} Kz</span></div>
+      <div class="info-box"><strong>RevPAR</strong><br><span style="font-size:20px">${kpis.revpar} Kz</span></div>
+    </div>
+    <p style="font-size:13px;color:var(--muted)">Receita de alojamento no mês: ${kpis.receitaTotal} Kz | Noites vendidas: ${kpis.noitesVendidas} | Quartos: ${kpis.totalQuartos}</p>
+  </div>
+
+  <div class="card">
+    <h3>🔮 Previsão de Ocupação (próximos 14 dias)</h3>
+    <table>
+      <thead><tr><th>Data</th><th>Ocupados</th><th>Total</th><th>Taxa</th></tr></thead>
+      <tbody>
+        ${forecast.porDia.map(d => `<tr><td>${d.data}</td><td>${d.ocupados}</td><td>${d.totalQuartos}</td><td>${d.taxa.toFixed(0)}%</td></tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>🚪 Chegadas e Partidas de Hoje (${chegPart.data})</h3>
+    <div class="grid-inline">
+      <div>
+        <h4 style="margin:6px 0">✈️ Chegadas (${chegPart.chegadas.length})</h4>
+        <table>
+          <thead><tr><th>Hóspede</th><th>Quarto</th><th>Estado</th></tr></thead>
+          <tbody>
+            ${chegPart.chegadas.length ? chegPart.chegadas.map(r=>`<tr><td>${r.hospedeNome}</td><td>${r.quartoId}</td><td><span class="badge ${r.estado}">${r.estado}</span></td></tr>`).join('') : '<tr><td colspan="3">Nenhuma.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      <div>
+        <h4 style="margin:6px 0">🚪 Partidas (${chegPart.partidas.length})</h4>
+        <table>
+          <thead><tr><th>Hóspede</th><th>Quarto</th><th>Estado</th></tr></thead>
+          <tbody>
+            ${chegPart.partidas.length ? chegPart.partidas.map(r=>`<tr><td>${r.hospedeNome}</td><td>${r.quartoId}</td><td><span class="badge ${r.estado}">${r.estado}</span></td></tr>`).join('') : '<tr><td colspan="3">Nenhuma.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ---------- Eventos dos formulários ---------- */
+function ligarEventos(){
+  const fReserva = document.getElementById('formReserva');
+  if(fReserva){
+    fReserva.onsubmit = submeterReserva;
+    // Atualizar resumo de tarifa quando mudam os campos relevantes
+    ['tipoId', 'checkinPrevisto', 'checkoutPrevisto', 'planoId', 'canalId', 'descontoAd', 'cupomCodigo'].forEach(name => {
+      const elem = fReserva.querySelector(`[name="${name}"]`);
+      if(elem) elem.addEventListener('change', atualizarResumoTarifa);
+    });
+  }
+
+  const fDisp = document.getElementById('formDisponibilidade');
+  if(fDisp) fDisp.onsubmit = verificarDisponibilidade;
+
+  const fQuarto = document.getElementById('formQuarto');
+  if(fQuarto) fQuarto.onsubmit = submeterQuarto;
+
+  const fEditaReserva = document.getElementById('formEditaReserva');
+  if(fEditaReserva) fEditaReserva.onsubmit = submeterEditaReserva;
+
+  const fBloqueio = document.getElementById('formBloqueio');
+  if(fBloqueio) fBloqueio.onsubmit = submeterBloqueio;
+
+  const fCheckout = document.getElementById('formCheckout');
+  if(fCheckout) fCheckout.onsubmit = submeterCheckout;
+
+  const fSazonalidade = document.getElementById('formSazonalidade');
+  if(fSazonalidade) fSazonalidade.onsubmit = submeterSazonalidade;
+
+  const fCupom = document.getElementById('formCupom');
+  if(fCupom) fCupom.onsubmit = submeterCupom;
+
+  const fBuscaHospede = document.getElementById('formBuscaHospede');
+  if(fBuscaHospede) fBuscaHospede.onsubmit = buscarHospede;
+
+  const fImportICal = document.getElementById('formImportICal');
+  if(fImportICal) fImportICal.onsubmit = submeterImportICal;
+  
+  // Popular select de tipos no modal
+  const selectTipoEdit = document.getElementById('selectTipoEdit');
+  if(selectTipoEdit && !selectTipoEdit.innerHTML.trim()){
+    selectTipoEdit.innerHTML = DBHotel.tiposQuarto.map(t=>`<option value="${t.id}">${t.nome} (${t.precoBase} Kz/noite)</option>`).join('');
+  }
+  
+  // Popular select de quartos no modal de bloqueios
+  const selectQuartosBloqueio = document.querySelector('#modalBloqueio select[name="quartoId"]');
+  if(selectQuartosBloqueio && !selectQuartosBloqueio.innerHTML.trim()){
+    selectQuartosBloqueio.innerHTML = DBHotel.quartos.map(q=>`<option value="${q.id}">${q.numero}</option>`).join('');
+  }
+}
+
+function atualizarResumoTarifa(){
+  const form = document.getElementById('formReserva');
+  if(!form) return;
+  
+  const tipoId = form.selTipo?.value || form.tipoId?.value;
+  const checkin = form.inCheckin?.value || form.checkinPrevisto?.value;
+  const checkout = form.inCheckout?.value || form.checkoutPrevisto?.value;
+  const planoId = form.querySelector('[name="planoId"]')?.value || 'rack';
+  const canalId = form.querySelector('[name="canalId"]')?.value || 'direto';
+  const descontoAd = parseFloat(form.querySelector('[name="descontoAd"]')?.value || 0);
+  
+  if(!tipoId || !checkin || !checkout){
+    document.getElementById('resumoTarifa').innerHTML = '<strong>Tarifa estimada:</strong> Preencha os dados acima';
+    return;
+  }
+  
+  const noites = calcularNoitesHotel(checkin, checkout);
+  if(noites <= 0){
+    document.getElementById('resumoTarifa').innerHTML = '<strong>Tarifa estimada:</strong> Datas inválidas';
+    return;
+  }
+  
+  const cupomCodigo = form.querySelector('[name="cupomCodigo"]')?.value;
+  let cupomId = null;
+  if(cupomCodigo){
+    const cupom = DBHotel.cupons.find(c => c.codigo === cupomCodigo);
+    if(cupom) cupomId = cupom.id;
+  }
+  
+  const total = calcularTotalReservaHotel(tipoId, checkin, checkout, planoId, canalId, descontoAd, cupomId);
+  const tipo = DBHotel.tiposQuarto.find(t => t.id === tipoId);
+  
+  document.getElementById('resumoTarifa').innerHTML = `
+    <strong>Resumo da Tarifa:</strong>
+    <div style="margin:8px 0;font-size:13px">
+      <p>• Tipo: ${tipo.nome} (${tipo.precoBase} Kz/noite base)</p>
+      <p>• Noites: ${noites}</p>
+      <p>• <strong>TOTAL: ${total} Kz</strong></p>
+    </div>
+  `;
+}
+
+async function submeterReserva(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const dados = Object.fromEntries(f.entries());
+  dados.sinal = Number(dados.sinal) || 0;
+
+  const noites = calcularNoitesHotel(dados.checkinPrevisto, dados.checkoutPrevisto);
+  if(noites <= 0){ alert('Check-out deve ser depois do check-in.'); return; }
+
+  const candidatos = getQuartosDisponivelHotel(dados.tipoId, dados.checkinPrevisto, dados.checkoutPrevisto);
+  
+  if(!candidatos.length){ 
+    if(!confirm('Não há quartos livres desse tipo. Deseja adicionar à lista de espera?')){
+      return;
+    }
+    dados.estado = 'waitlist';
+  } else {
+    if(!dados.estado) dados.estado = 'confirmada';
+  }
+
+  const tipo = DBHotel.tiposQuarto.find(t => t.id === dados.tipoId);
+  const quartoId = candidatos.length ? candidatos[0].id : null;
+  
+  // Obter ou criar hóspede
+  const hospede = obterOuCriarHospede(dados.hospedeNome, dados.hospedeDoc, dados.hospedeContacto, dados.hospedeEmail);
+  
+  // Calcular tarifa com todas as variáveis
+  const planoId = dados.planoId || 'rack';
+  const canalId = dados.canalId || 'direto';
+  const descontoAd = parseFloat(dados.descontoAd || 0);
+  
+  let cupomId = null;
+  if(dados.cupomCodigo){
+    const validCupom = validarCupomHotel(dados.cupomCodigo);
+    if(validCupom.ok) cupomId = validCupom.cupom.id;
+  }
+  
+  const totalReserva = calcularTotalReservaHotel(dados.tipoId, dados.checkinPrevisto, dados.checkoutPrevisto, planoId, canalId, descontoAd, cupomId);
+  
+  const reserva = {
+    id: uidHotel(),
+    hospedeId: hospede.id,
+    hospedeNome: dados.hospedeNome, hospedeDoc: dados.hospedeDoc, hospedeContacto: dados.hospedeContacto,
+    preferencias: dados.preferencias || '',
+    numHospedes: Number(dados.numHospedes) || 1,
+    quartoId: quartoId, tipoId: dados.tipoId,
+    checkinPrevisto: dados.checkinPrevisto, checkoutPrevisto: dados.checkoutPrevisto,
+    checkinReal: null, checkoutReal: null,
+    estado: dados.estado,
+    planoId: planoId,
+    canalId: canalId,
+    precoNoite: tipo.precoBase, numNoites: noites, 
+    totalReserva: totalReserva,
+    descontoAd: descontoAd,
+    cupomId: cupomId,
+    sinal: dados.sinal, 
+    observacoes: dados.observacoes,
+    criadoEm: new Date().toISOString()
+  };
+  DBHotel.reservas.push(reserva);
+  
+  // Atualizar preferências do hóspede
+  if(dados.preferencias){
+    if(!hospede.preferencias) hospede.preferencias = [];
+    hospede.preferencias.push(dados.preferencias);
+  }
+  
+  // Regista o sinal na conta corrente (folio) da reserva, mesmo que ainda
+  // não seja lançado na tesouraria agora
+  if(reserva.sinal > 0){
+    adicionarFolioHotel(reserva.id, {tipo:'sinal', descricao:'Sinal de Reserva', valor: reserva.sinal});
+  }
+
+  // Comunicação automática: prepara o e-mail de confirmação da reserva,
+  // pronto a enviar na Fila de Comunicações (não envia sozinho — ver módulo "✉️ Comunicações")
+  criarComunicacaoHotel(reserva.id, 'confirmacao');
+
+  await saveDBHotel();
+
+  if(reserva.sinal > 0 && confirm(`Lançar já o sinal de ${reserva.sinal} Kz na tesouraria?`)){
+    await gerarLancamentoReceitaHotel(reserva, reserva.sinal, 'Sinal de Reserva');
+  }
+
+  toastHotel(`Reserva criada com sucesso (${reserva.estado}).`);
+  e.target.reset();
+  document.getElementById('resumoTarifa').innerHTML = '<strong>Tarifa estimada:</strong> Preencha os dados acima';
+}
+
+async function verificarDisponibilidade(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const dados = Object.fromEntries(f.entries());
+  
+  const disponivel = getQuartosDisponivelHotel(dados.tipoId, dados.checkinPrevisto, dados.checkoutPrevisto);
+  const tipo = DBHotel.tiposQuarto.find(t => t.id === dados.tipoId);
+  const noites = calcularNoitesHotel(dados.checkinPrevisto, dados.checkoutPrevisto);
+  
+  const resultado = `<div class="card">
+    <h3>Resultado da Disponibilidade</h3>
+    <p><strong>Tipo:</strong> ${tipo.nome}</p>
+    <p><strong>Período:</strong> ${dados.checkinPrevisto} → ${dados.checkoutPrevisto} (${noites} noites)</p>
+    <p><strong>Quartos disponíveis:</strong> ${disponivel.length}</p>
+    ${disponivel.length ? `
+      <p><strong>Preço por noite:</strong> ${tipo.precoBase} Kz | <strong>Total:</strong> ${tipo.precoBase * noites} Kz</p>
+      <table>
+        <tr><th>Quarto</th></tr>
+        ${disponivel.map(q=>`<tr><td>${q.numero}</td></tr>`).join('')}
+      </table>
+    ` : '<p style="color:var(--vermelho)">❌ Nenhum quarto disponível neste período.</p>'}
+  </div>`;
+  
+  document.getElementById('resultadoDisponibilidade').innerHTML = resultado;
+}
+
+async function submeterQuarto(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const dados = Object.fromEntries(f.entries());
+  DBHotel.quartos.push({ id: uidHotel(), numero: dados.numero, tipoId: dados.tipoId, estado: 'livre' });
+  await saveDBHotel();
+  toastHotel('Quarto adicionado.');
+  render();
+}
+
+async function submeterBloqueio(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const dados = Object.fromEntries(f.entries());
+  
+  if(dados.dataFim <= dados.dataIni){ 
+    alert('Data fim deve ser depois da data início.'); 
+    return; 
+  }
+  
+  DBHotel.bloqueios.push({
+    id: uidHotel(),
+    quartoId: dados.quartoId,
+    tipo: dados.tipo,
+    dataIni: dados.dataIni,
+    dataFim: dados.dataFim,
+    observacoes: dados.observacoes
+  });
+  await saveDBHotel();
+  toastHotel('Bloqueio criado com sucesso.');
+  fecharModalBloqueio();
+  render();
+}
+
+function abrirModalReserva(reservaId){
+  const reserva = DBHotel.reservas.find(r => r.id === reservaId);
+  if(!reserva) return;
+  
+  const modal = document.getElementById('modalReserva');
+  const form = document.getElementById('formEditaReserva');
+  form.reservaId.value = reserva.id;
+  form.hospedeNome.value = reserva.hospedeNome;
+  form.hospedeDoc.value = reserva.hospedeDoc || '';
+  form.hospedeContacto.value = reserva.hospedeContacto || '';
+  form.numHospedes.value = reserva.numHospedes || 1;
+  form.tipoId.value = reserva.tipoId;
+  form.checkinPrevisto.value = reserva.checkinPrevisto;
+  form.checkoutPrevisto.value = reserva.checkoutPrevisto;
+  form.estado.value = reserva.estado;
+  form.sinal.value = reserva.sinal || 0;
+  form.observacoes.value = reserva.observacoes || '';
+  
+  modal.classList.add('ativo');
+}
+
+function fecharModalReserva(){
+  document.getElementById('modalReserva').classList.remove('ativo');
+}
+
+async function submeterEditaReserva(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const dados = Object.fromEntries(f.entries());
+  
+  const reserva = DBHotel.reservas.find(r => r.id === dados.reservaId);
+  if(!reserva) return;
+  
+  const noites = calcularNoitesHotel(dados.checkinPrevisto, dados.checkoutPrevisto);
+  const tipo = DBHotel.tiposQuarto.find(t => t.id === dados.tipoId);
+  
+  Object.assign(reserva, {
+    hospedeNome: dados.hospedeNome,
+    hospedeDoc: dados.hospedeDoc,
+    hospedeContacto: dados.hospedeContacto,
+    numHospedes: Number(dados.numHospedes) || 1,
+    tipoId: dados.tipoId,
+    checkinPrevisto: dados.checkinPrevisto,
+    checkoutPrevisto: dados.checkoutPrevisto,
+    estado: dados.estado,
+    sinal: Number(dados.sinal) || 0,
+    observacoes: dados.observacoes,
+    numNoites: noites,
+    totalReserva: tipo.precoBase * noites
+  });
+  
+  await saveDBHotel();
+  toastHotel('Reserva atualizada com sucesso.');
+  fecharModalReserva();
+  render();
+}
+
+async function apagarReserva(){
+  const form = document.getElementById('formEditaReserva');
+  const reservaId = form.reservaId.value;
+  
+  if(!confirm('Tem certeza que quer cancelar esta reserva?')) return;
+  
+  const reserva = DBHotel.reservas.find(r => r.id === reservaId);
+  if(reserva) reserva.estado = 'cancelada';
+  
+  await saveDBHotel();
+  toastHotel('Reserva cancelada.');
+  fecharModalReserva();
+  render();
+}
+
+function abrirModalBloqueio(){
+  document.getElementById('modalBloqueio').classList.add('ativo');
+}
+
+function fecharModalBloqueio(){
+  document.getElementById('modalBloqueio').classList.remove('ativo');
+  document.getElementById('formBloqueio').reset();
+}
+
+async function apagarBloqueio(bloqueioId){
+  if(!confirm('Remover este bloqueio?')) return;
+  
+  DBHotel.bloqueios = DBHotel.bloqueios.filter(b => b.id !== bloqueioId);
+  await saveDBHotel();
+  toastHotel('Bloqueio removido.');
+  render();
+}
+
+/* ---------- Modais e Funções Auxiliares ---------- */
+function abrirModalSazonalidade(){
+  document.getElementById('modalSazonalidade').classList.add('ativo');
+}
+
+function fecharModalSazonalidade(){
+  document.getElementById('modalSazonalidade').classList.remove('ativo');
+  document.getElementById('formSazonalidade').reset();
+}
+
+function abrirModalCupom(){
+  document.getElementById('modalCupom').classList.add('ativo');
+}
+
+function fecharModalCupom(){
+  document.getElementById('modalCupom').classList.remove('ativo');
+  document.getElementById('formCupom').reset();
+}
+
+function fecharModalCheckout(){
+  document.getElementById('modalCheckout').classList.remove('ativo');
+  document.getElementById('formCheckout').reset();
+}
+
+/* ---------- Conta Corrente (Folio) ---------- */
+let folioReservaAtual = null;
+
+function abrirModalFolio(reservaId){
+  folioReservaAtual = reservaId;
+  renderCorpoFolio();
+  document.getElementById('modalFolio').classList.add('ativo');
+}
+
+function fecharModalFolio(){
+  document.getElementById('modalFolio').classList.remove('ativo');
+  folioReservaAtual = null;
+}
+
+function renderCorpoFolio(){
+  const reserva = DBHotel.reservas.find(r => r.id === folioReservaAtual);
+  if(!reserva){ document.getElementById('corpoFolio').innerHTML = '<p>Reserva não encontrada.</p>'; return; }
+
+  const itens = listarFolioReservaHotel(folioReservaAtual);
+  const saldo = calcularSaldoFolioHotel(folioReservaAtual);
+
+  document.getElementById('tituloFolio').textContent = `📒 Folio — ${reserva.hospedeNome} (Qt.${reserva.quartoId})`;
+
+  document.getElementById('corpoFolio').innerHTML = `
+    <div class="info-box">
+      <strong>Diária (base da reserva):</strong> ${reserva.totalReserva} Kz<br>
+      <strong>Saldo em aberto:</strong> <span style="font-size:16px">${saldo} Kz</span>
+    </div>
+    <table>
+      <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Valor</th><th></th></tr></thead>
+      <tbody>
+        ${itens.length ? itens.map(f => `
+          <tr>
+            <td>${f.data}</td>
+            <td>${f.tipo}</td>
+            <td>${f.descricao}${f.tipoVenda?` <small style="color:var(--muted)">(${f.tipoVenda})</small>`:''}</td>
+            <td>${f.valor} Kz</td>
+            <td><button class="small danger" onclick="apagarItemFolio('${f.id}')">🗑️</button></td>
+          </tr>`).join('') : '<tr><td colspan="5">Sem consumos/extras lançados ainda.</td></tr>'}
+      </tbody>
+    </table>
+    <h3>Adicionar Consumo / Extra / Desconto / Pagamento</h3>
+    <form id="formFolio" onsubmit="submeterItemFolio(event)">
+      <div class="grid-inline col3">
+        <div>
+          <label>Tipo</label>
+          <select name="tipo">
+            <option value="consumo">Consumo (Restaurante/Bar)</option>
+            <option value="extra">Extra (serviço, lavandaria, etc.)</option>
+            <option value="desconto">Desconto</option>
+            <option value="pagamento">Pagamento parcial</option>
+          </select>
+        </div>
+        <div>
+          <label>Tipo de Venda (categoria de receita)</label>
+          <select name="tipoVenda">
+            <option value="Hospedagem">Hospedagem</option>
+            <option value="Restauração">Restauração</option>
+            <option value="Bar">Bar</option>
+            <option value="Outros Serviços">Outros Serviços</option>
+          </select>
+        </div>
+        <div>
+          <label>Descrição</label>
+          <input name="descricao" required placeholder="Ex: Jantar restaurante, 2 pax">
+        </div>
+      </div>
+      <label>Valor (Kz)</label>
+      <input type="number" name="valor" required min="0">
+      <button type="submit">Adicionar ao Folio</button>
+    </form>
+  `;
+}
+
+async function submeterItemFolio(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const dados = Object.fromEntries(f.entries());
+  adicionarFolioHotel(folioReservaAtual, {
+    tipo: dados.tipo,
+    descricao: dados.descricao,
+    tipoVenda: dados.tipoVenda,
+    valor: Number(dados.valor) || 0
+  });
+  await saveDBHotel();
+  toastHotel('Lançado no folio.');
+  renderCorpoFolio();
+}
+
+async function apagarItemFolio(folioId){
+  if(!confirm('Remover este lançamento do folio?')) return;
+  removerFolioHotel(folioId);
+  await saveDBHotel();
+  renderCorpoFolio();
+}
+
+function fecharModalPerfilHospede(){
+  document.getElementById('modalPerfilHospede').classList.remove('ativo');
+}
+
+async function submeterSazonalidade(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const dados = Object.fromEntries(f.entries());
+  
+  if(dados.dataFim <= dados.dataIni){
+    alert('Data fim deve ser depois da data início.');
+    return;
+  }
+  
+  DBHotel.sazonalidade.push({
+    id: uidHotel(),
+    nome: dados.nome,
+    dataIni: dados.dataIni,
+    dataFim: dados.dataFim,
+    multiplicador: parseFloat(dados.multiplicador)
+  });
+  
+  await saveDBHotel();
+  toastHotel('Período de sazonalidade criado.');
+  fecharModalSazonalidade();
+  render();
+}
+
+async function apagarSazonalidade(id){
+  if(!confirm('Remover este período?')) return;
+  DBHotel.sazonalidade = DBHotel.sazonalidade.filter(s => s.id !== id);
+  await saveDBHotel();
+  toastHotel('Período removido.');
+  render();
+}
+
+async function submeterCupom(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const dados = Object.fromEntries(f.entries());
+  
+  // Validar se código já existe
+  if(DBHotel.cupons.find(c => c.codigo === dados.codigo)){
+    alert('Este código de cupom já existe.');
+    return;
+  }
+  
+  DBHotel.cupons.push({
+    id: uidHotel(),
+    codigo: dados.codigo.toUpperCase(),
+    desconto: parseFloat(dados.desconto),
+    dataExp: dados.dataExp,
+    usos_max: parseInt(dados.usos_max),
+    usos_atuais: 0
+  });
+  
+  await saveDBHotel();
+  toastHotel(`Cupom "${dados.codigo}" criado com sucesso.`);
+  fecharModalCupom();
+  render();
+}
+
+async function apagarCupom(id){
+  if(!confirm('Remover este cupom?')) return;
+  DBHotel.cupons = DBHotel.cupons.filter(c => c.id !== id);
+  await saveDBHotel();
+  toastHotel('Cupom removido.');
+  render();
+}
+
+function buscarReservaCheckin(){
+  const busca = document.querySelector('#formCheckin input[name="busca"]').value.toLowerCase();
+  if(!busca) return;
+  
+  const reserva = DBHotel.reservas.find(r => 
+    r.estado !== 'cancelada' && 
+    (r.hospedeNome.toLowerCase().includes(busca) || r.hospedeDoc?.includes(busca))
+  );
+  
+  if(!reserva){
+    document.getElementById('detalhesCheckin').innerHTML = '<div class="info-box" style="background:#F6E4E0">Reserva não encontrada.</div>';
+    return;
+  }
+  
+  document.getElementById('detalhesCheckin').innerHTML = `
+    <div class="card" style="background:#FEF3C7;border-color:#F59E0B;margin-top:12px">
+      <h4>${reserva.hospedeNome}</h4>
+      <p><strong>Quarto:</strong> ${reserva.tipoId} | <strong>Período:</strong> ${reserva.checkinPrevisto} → ${reserva.checkoutPrevisto}</p>
+      <p><strong>Preferências:</strong> ${reserva.preferencias || '-'}</p>
+      <button class="small" onclick="executarCheckin('${reserva.id}')">✈️ Executar Check-in</button>
+    </div>
+  `;
+}
+
+async function executarCheckin(reservaId){
+  const reserva = DBHotel.reservas.find(r => r.id === reservaId);
+  if(!reserva) return;
+  
+  const quartos = getQuartosDisponivelHotel(reserva.tipoId, reserva.checkinPrevisto, reserva.checkoutPrevisto);
+  if(!quartos.length){
+    alert('Nenhum quarto disponível deste tipo. Verifique a disponibilidade.');
+    return;
+  }
+  
+  // Atribuir quarto automaticamente (primeiro disponível)
+  reserva.quartoId = quartos[0].id;
+  reserva.checkinReal = new Date().toISOString().split('T')[0];
+  reserva.estado = 'checkin';
+  
+  await saveDBHotel();
+  toastHotel(`Check-in realizado! Quarto ${quartos[0].numero}`);
+  render();
+}
+
+function abrirCheckout(reservaId){
+  const reserva = DBHotel.reservas.find(r => r.id === reservaId);
+  if(!reserva) return;
+  
+  const form = document.getElementById('formCheckout');
+  form.querySelector('[name="reservaId"]').value = reservaId;
+  form.querySelector('[name="checkoutReal"]').value = new Date().toISOString().split('T')[0];
+
+  // Popular selects de Forma de Pagamento/Conta com o esquema real do Tesoucantábil
+  const selForma = document.getElementById('selFormaPagamentoUnica');
+  if(selForma) selForma.innerHTML = FORMAS_PAGAMENTO_HOTEL.map(f=>`<option value="${f}">${labelFormaPagamentoHotel(f)}</option>`).join('');
+  const selConta = document.getElementById('selContaUnica');
+  if(selConta) selConta.innerHTML = CONTAS_HOTEL.map(c=>`<option value="${c.codigo}">${c.nome}</option>`).join('');
+  atualizarContaUnica();
+
+  const selManutencao = document.getElementById('selTipoManutencao');
+  if(selManutencao) selManutencao.innerHTML = TIPOS_MANUTENCAO_HOTEL.map(t=>`<option value="${t}">${t}</option>`).join('');
+  document.getElementById('chkManutencao').checked = false;
+  document.getElementById('areaManutencaoCheckout').style.display = 'none';
+
+  const extras = totalExtrasFolioHotel(reservaId);
+  const pago = totalPagoFolioHotel(reservaId);
+  const saldo = calcularSaldoFolioHotel(reservaId);
+
+  document.getElementById('resumoCheckout').innerHTML = `
+    <div class="card" style="background:#E4F0EE;border-color:#1F6F68;margin-bottom:16px">
+      <p><strong>${reserva.hospedeNome}</strong> | Quarto ${reserva.quartoId}</p>
+      <p>Check-in: ${reserva.checkinReal} | Check-out previsto: ${reserva.checkoutPrevisto}</p>
+      <p>Diária: ${reserva.totalReserva} Kz &nbsp;+&nbsp; Extras/Consumos: ${extras} Kz &nbsp;−&nbsp; Sinal/Pago: ${pago} Kz</p>
+      <p><strong>Saldo a pagar no check-out:</strong> <span style="font-size:16px">${saldo} Kz</span></p>
+      <button type="button" class="small" onclick="abrirModalFolio('${reservaId}')">📒 Ver/editar Folio</button>
+    </div>
+  `;
+  
+  document.getElementById('modalCheckout').classList.add('ativo');
+}
+
+/* A Conta só faz sentido escolher quando a Forma de Pagamento não é Cash
+   (Cash fica sempre travado na Caixa Tesouraria, igual ao Tesoucantábil). */
+function atualizarContaUnica(){
+  const forma = document.getElementById('selFormaPagamentoUnica')?.value;
+  const areaConta = document.getElementById('areaContaUnica');
+  const selConta = document.getElementById('selContaUnica');
+  if(!areaConta || !selConta) return;
+  if(forma === 'Cash'){
+    selConta.value = 'CASH';
+    areaConta.style.display = 'none';
+  } else {
+    areaConta.style.display = 'block';
+    if(selConta.value === 'CASH') selConta.value = 'BAI-KZ-001';
+  }
+}
+
+function alternarSplitCheckout(){
+  const marcado = document.getElementById('chkDividir').checked;
+  const area = document.getElementById('areaSplitCheckout');
+  const areaUnico = document.getElementById('areaPagamentoUnico');
+  area.style.display = marcado ? 'block' : 'none';
+  areaUnico.style.display = marcado ? 'none' : 'block';
+  if(marcado && !area.innerHTML){
+    linhasSplitCheckout = [
+      {descricao:'Parte 1', valor:'', tipoVenda:'Hospedagem', formaPagamento:'Cash', conta:'CASH'},
+      {descricao:'Parte 2', valor:'', tipoVenda:'Hospedagem', formaPagamento:'Banco', conta:'BAI-KZ-001'}
+    ];
+    renderLinhasSplitCheckout();
+  }
+}
+
+function alternarManutencaoCheckout(){
+  const marcado = document.getElementById('chkManutencao').checked;
+  document.getElementById('areaManutencaoCheckout').style.display = marcado ? 'block' : 'none';
+}
+
+let linhasSplitCheckout = [];
+
+function renderLinhasSplitCheckout(){
+  const area = document.getElementById('areaSplitCheckout');
+  area.innerHTML = `
+    <div class="info-box">Cada linha vira uma fatura/lançamento separado na Tesouraria, já na Categoria de Receita certa.</div>
+    ${linhasSplitCheckout.map((l,i) => `
+      <div class="grid-inline col3" style="align-items:end">
+        <div><label>Descrição</label><input value="${l.descricao}" oninput="linhasSplitCheckout[${i}].descricao=this.value"></div>
+        <div><label>Valor (Kz)</label><input type="number" value="${l.valor}" oninput="linhasSplitCheckout[${i}].valor=this.value"></div>
+        <div>
+          <label>Tipo de Venda</label>
+          <select onchange="linhasSplitCheckout[${i}].tipoVenda=this.value">
+            <option value="Hospedagem" ${l.tipoVenda==='Hospedagem'?'selected':''}>Hospedagem</option>
+            <option value="Restauração" ${l.tipoVenda==='Restauração'?'selected':''}>Restauração</option>
+            <option value="Bar" ${l.tipoVenda==='Bar'?'selected':''}>Bar</option>
+            <option value="Outros Serviços" ${l.tipoVenda==='Outros Serviços'?'selected':''}>Outros Serviços</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid-inline" style="margin-bottom:10px;align-items:end">
+        <div>
+          <label>Forma Pagamento</label>
+          <select onchange="linhasSplitCheckout[${i}].formaPagamento=this.value; linhasSplitCheckout[${i}].conta=this.value==='Cash'?'CASH':'BAI-KZ-001'; renderLinhasSplitCheckout();">
+            ${FORMAS_PAGAMENTO_HOTEL.map(f=>`<option value="${f}" ${l.formaPagamento===f?'selected':''}>${labelFormaPagamentoHotel(f)}</option>`).join('')}
+          </select>
+        </div>
+        ${l.formaPagamento !== 'Cash' ? `
+        <div>
+          <label>Conta</label>
+          <select onchange="linhasSplitCheckout[${i}].conta=this.value">
+            ${CONTAS_HOTEL.map(c=>`<option value="${c.codigo}" ${l.conta===c.codigo?'selected':''}>${c.nome}</option>`).join('')}
+          </select>
+        </div>` : ''}
+      </div>
+    `).join('')}
+    <button type="button" class="small" onclick="linhasSplitCheckout.push({descricao:'Parte '+(linhasSplitCheckout.length+1),valor:'',tipoVenda:'Hospedagem',formaPagamento:'Cash',conta:'CASH'});renderLinhasSplitCheckout()">+ Adicionar linha</button>
+  `;
+}
+
+async function submeterCheckout(e){
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const dados = Object.fromEntries(f.entries());
+  
+  const reserva = DBHotel.reservas.find(r => r.id === dados.reservaId);
+  if(!reserva) return;
+  
+  reserva.checkoutReal = dados.checkoutReal;
+  reserva.estado = 'checkout';
+  
+  // Cobrar taxa extra se late checkout (entra no folio como extra)
+  if(dados.lateCheckout === 'on'){
+    const extraTax = Math.round(reserva.totalReserva * 0.25); // 25% de taxa extra
+    adicionarFolioHotel(reserva.id, {tipo:'extra', descricao:'Late check-out', tipoVenda:'Hospedagem', valor: extraTax});
+    reserva.notasCheckout = `[LATE CHECKOUT: +${extraTax} Kz] ${dados.notasCheckout}`;
+  } else {
+    reserva.notasCheckout = dados.notasCheckout;
+  }
+  
+  // Registar estadia
+  registarEstadiaHotel(
+    dados.reservaId,
+    reserva.checkinReal,
+    dados.checkoutReal,
+    reserva.quartoId,
+    dados.notasCheckout
+  );
+
+  // Saldo final da conta corrente (folio) a lançar na Tesouraria
+  const saldo = calcularSaldoFolioHotel(reserva.id);
+
+  if(saldo > 0){
+    let divisoes;
+    if(dados.dividirConta === 'on' && linhasSplitCheckout.length){
+      divisoes = linhasSplitCheckout
+        .filter(l => Number(l.valor) > 0)
+        .map(l => ({
+          itens: [{descricao:l.descricao, valor:Number(l.valor), tipoVenda:l.tipoVenda}],
+          formaPagamento: l.formaPagamento,
+          conta: l.conta
+        }));
+      const somaLinhas = divisoes.reduce((s,d)=>s+d.itens[0].valor,0);
+      if(Math.round(somaLinhas) !== Math.round(saldo)){
+        if(!confirm(`A soma das linhas (${somaLinhas} Kz) é diferente do saldo do folio (${saldo} Kz). Continuar mesmo assim?`)) return;
+      }
+    } else {
+      divisoes = [{
+        itens: [{descricao:`Estadia Qt.${reserva.quartoId} (${reserva.checkinReal} a ${dados.checkoutReal})`, valor: saldo, tipoVenda: dados.tipoVendaUnica || 'Hospedagem'}],
+        formaPagamento: dados.formaPagamentoUnica || 'Cash',
+        conta: dados.contaUnica || 'CASH'
+      }];
+    }
+    const resultado = await gerarFaturasSplitHotel(reserva.id, divisoes);
+    if(resultado.ok && resultado.faturas.length){
+      adicionarFolioHotel(reserva.id, {tipo:'pagamento', descricao:`Pagamento no check-out (${resultado.faturas.length} fatura(s))`, valor: saldo});
+    }
+  }
+  
+  linhasSplitCheckout = [];
+
+  // Comunicação automática: prepara o pedido de feedback pós-estadia,
+  // pronto a enviar (por defeito) alguns dias depois do check-out — ver "✉️ Comunicações"
+  {
+    const dataFeedback = new Date(reserva.checkoutReal);
+    dataFeedback.setDate(dataFeedback.getDate() + CONFIG_COMUNICACOES_HOTEL.diasDepoisFeedback);
+    criarComunicacaoHotel(reserva.id, 'feedback', dataFeedback.toISOString().split('T')[0]);
+  }
+
+  // Assinalar necessidade de manutenção (Serviços Gerais) — cria um
+  // Bloqueio no quarto, com o tipo de intervenção, para entrar no
+  // Relatório Operacional Diário e impedir novas reservas até resolver.
+  if(dados.precisaManutencao === 'on' && reserva.quartoId){
+    criarBloqueioManutencaoHotel(
+      reserva.quartoId,
+      dados.tipoManutencao || 'Outro',
+      dados.obsManutencao || '',
+      dados.checkoutReal,
+      Number(dados.diasManutencao) || 2
+    );
+  }
+
+  await saveDBHotel();
+  toastHotel('Check-out realizado e lançado na Tesouraria.');
+  fecharModalCheckout();
+  render();
+}
+
+/* ---------- Lançamentos: Resumo de Fecho de Caixa (Check-out) ----------
+   Mesma lógica do "Fecho de Caixa Dividido" da Contabilidade: consolida
+   a faturação do ERP de faturação do hotel (as faturas geradas no
+   check-out) por Forma de Pagamento e lança o resumo na Tesouraria.
+   O check-out já lança cada fatura automaticamente; este botão serve
+   para confirmar isso e recuperar faturas que fiquem pendentes. */
+let dataResumoLancamentosHotel = new Date().toISOString().split('T')[0];
+
+function viewLancamentosHotel(){
+  const pendentes = faturasPendentesHotel(dataResumoLancamentosHotel);
+  const linhas = resumoLinhasPendentesHotel(dataResumoLancamentosHotel);
+  const total = linhas.reduce((s,l)=>s+l.valor,0);
+  const historico = (DBHotel.fechosCaixaHotel||[]).slice().reverse().slice(0,15);
+
+  return `<h2>📝 Lançamentos — Resumo de Fecho de Caixa</h2>
+  <div class="info-box">
+    Consolida a faturação do check-out (ERP de faturação do hotel) por Forma de Pagamento e Tipo de Venda, e lança o resumo na Tesouraria — mesma lógica do módulo "Fecho de Caixa" da Contabilidade. O check-out já lança cada fatura automaticamente; este botão confirma isso e recupera faturas que tenham ficado pendentes (ex.: Tesouraria indisponível no momento do check-out).
+  </div>
+
+  <div class="card">
+    <h3>Faturas de check-out pendentes de lançamento</h3>
+    <label>Data do fecho de caixa</label>
+    <input type="date" value="${dataResumoLancamentosHotel}" onchange="dataResumoLancamentosHotel=this.value; render();">
+    <table>
+      <thead><tr><th>Nº Fatura</th><th>Hóspede</th><th>Quarto</th><th>Forma Pagto.</th><th>Valor</th><th>Estado</th></tr></thead>
+      <tbody>
+        ${pendentes.length ? pendentes.map(f=>{
+          const reserva = DBHotel.reservas.find(r=>r.id===f.reservaId);
+          return `<tr>
+            <td>${f.numero}</td>
+            <td>${reserva ? reserva.hospedeNome : '-'}</td>
+            <td>${reserva ? reserva.quartoId : '-'}</td>
+            <td>${labelFormaPagamentoHotel(f.formaPagamento)}</td>
+            <td>${f.total} Kz</td>
+            <td><span class="badge provisoria">Pendente</span></td>
+          </tr>`;
+        }).join('') : '<tr><td colspan="6">Nenhuma fatura pendente nesta data — tudo já lançado na Tesouraria.</td></tr>'}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Resumo por Forma de Pagamento (a lançar)</h3>
+    <table>
+      <thead><tr><th>Forma de Pagamento</th><th>Conta</th><th>Tipo de Venda</th><th>Valor</th></tr></thead>
+      <tbody>
+        ${linhas.length ? linhas.map(l=>`<tr>
+          <td>${labelFormaPagamentoHotel(l.formaPagamento)}</td>
+          <td>${(CONTAS_HOTEL.find(c=>c.codigo===l.conta)||{}).nome || l.conta}</td>
+          <td>${l.tipoVenda}</td>
+          <td>${l.valor} Kz</td>
+        </tr>`).join('') : '<tr><td colspan="4">Sem valores a lançar nesta data.</td></tr>'}
+      </tbody>
+    </table>
+    <p><strong>Total a lançar: ${total} Kz</strong></p>
+    <button ${!linhas.length ? 'disabled' : ''} onclick="submeterResumoLancamentosHotel()">📤 Lançar Resumo na Tesouraria</button>
+  </div>
+
+  <div class="card">
+    <h3>Histórico de Resumos Lançados</h3>
+    <table>
+      <thead><tr><th>Data</th><th>Total</th><th>Lançado em</th></tr></thead>
+      <tbody>
+        ${historico.length ? historico.map(h=>`<tr><td>${h.data}</td><td>${h.total} Kz</td><td>${new Date(h.criadoEm).toLocaleString('pt-PT')}</td></tr>`).join('') : '<tr><td colspan="3">Ainda sem resumos lançados.</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+async function submeterResumoLancamentosHotel(){
+  const linhas = resumoLinhasPendentesHotel(dataResumoLancamentosHotel);
+  if(!linhas.length){ toastHotel('Não há valores pendentes para lançar nesta data.'); return; }
+  if(!confirm(`Lançar o Resumo de Fecho de Caixa de ${dataResumoLancamentosHotel} na Tesouraria?`)) return;
+
+  const resultado = await lancarResumoFechoCaixaHotel(dataResumoLancamentosHotel, linhas);
+  if(resultado.ok){
+    toastHotel('Resumo de Fecho de Caixa lançado na Tesouraria.');
+    render();
+  } else {
+    toastHotel(resultado.msg || 'Erro ao lançar o resumo.');
+  }
+}
+
+function abrirPerfilHospede(hospedeId){
+  const hospede = DBHotel.hospedes.find(h => h.id === hospedeId);
+  if(!hospede) return;
+  
+  const estadias = DBHotel.estadias.filter(e => e.hospedeId === hospedeId);
+  const diasTotais = estadias.reduce((a,b) => a + b.noites, 0);
+  
+  document.getElementById('tituloPerfilHospede').textContent = `👤 ${hospede.nome}`;
+  
+  const html = `
+    <div class="card">
+      <h4>Informações de Contacto</h4>
+      <p><strong>Documento:</strong> ${hospede.documento || '-'}</p>
+      <p><strong>Telefone:</strong> ${hospede.contacto || '-'}</p>
+      <p><strong>Email:</strong> ${hospede.email || '-'}</p>
+      <p><strong>Morada:</strong> ${hospede.morada || '-'}</p>
+      <p><strong>País:</strong> ${hospede.pais || '-'}</p>
+    </div>
+    
+    <div class="card">
+      <h4>Fidelização</h4>
+      <p><strong>Nível:</strong> <span class="badge" style="background:${hospede.fidelizacao === 'platina' ? '#C0C0C0' : hospede.fidelizacao === 'ouro' ? '#FFD700' : hospede.fidelizacao === 'prata' ? '#C0C0C0' : '#CD7F32'};color:#000">${hospede.fidelizacao.toUpperCase()}</span></p>
+      <p><strong>Total de estadias:</strong> ${hospede.totalEstadias || 0}</p>
+      <p><strong>Dias totais alojado:</strong> ${diasTotais}</p>
+      <p><strong>Membro desde:</strong> ${hospede.dataPrimeira}</p>
+    </div>
+    
+    <div class="card">
+      <h4>Preferências e Notas</h4>
+      <p>${hospede.preferencias?.join(', ') || 'Nenhuma preferência registada'}</p>
+    </div>
+    
+    ${estadias.length ? `
+      <div class="card">
+        <h4>Histórico de Estadias</h4>
+        <table>
+          <thead><tr><th>Período</th><th>Quarto</th><th>Noites</th><th>Total</th></tr></thead>
+          <tbody>
+            ${estadias.map(e => `
+              <tr>
+                <td>${e.checkinReal} → ${e.checkoutReal}</td>
+                <td>${e.quartoId}</td>
+                <td>${e.noites}</td>
+                <td>${e.totalPago || '-'} Kz</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    ` : '<div class="card"><p>Nenhuma estadia registada ainda.</p></div>'}
+  `;
+  
+  document.getElementById('conteudoPerfilHospede').innerHTML = html;
+  document.getElementById('modalPerfilHospede').classList.add('ativo');
+}
+
+async function buscarHospede(e){
+  e.preventDefault();
+  const busca = e.target.busca.value.toLowerCase();
+  
+  if(!busca){
+    render();
+    return;
+  }
+  
+  const resultados = DBHotel.hospedes.filter(h => 
+    h.nome.toLowerCase().includes(busca) || 
+    h.documento?.includes(busca) ||
+    h.email?.includes(busca)
+  );
+  
+  const html = `<h2>👥 Perfis de Hóspedes</h2>
+    <div class="card">
+      <form id="formBuscaHospede">
+        <div class="grid-inline">
+          <input name="busca" placeholder="Procurar por nome ou documento" value="${busca}">
+          <button type="submit">Procurar</button>
+        </div>
+      </form>
+    </div>
+    <div class="card">
+      <h3>Resultados (${resultados.length})</h3>
+      <table>
+        <thead><tr><th>Nome</th><th>Contacto</th><th>Documento</th><th>Ações</th></tr></thead>
+        <tbody>
+          ${resultados.length ? resultados.map(h => `
+            <tr>
+              <td>${h.nome}</td>
+              <td>${h.contacto}</td>
+              <td>${h.documento || '-'}</td>
+              <td><button class="small" onclick="abrirPerfilHospede('${h.id}')">👁️ Ver</button></td>
+            </tr>
+          `).join('') : '<tr><td colspan="4">Nenhum resultado.</td></tr>'}
+        </tbody>
+      </table>
+    </div>`;
+  
+  document.getElementById('main').innerHTML = html;
+  ligarEventos();
+}
+
+iniciar();
+</script>
+</body>
+</html>
