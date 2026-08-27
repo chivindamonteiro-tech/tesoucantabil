@@ -134,7 +134,7 @@ let DBHotel = {
     icalImportUrls: []
     // {id, canalId, nome, url}
   },
-  fechosCaixaHotel: []
+  fechosCaixaHotel: [],
   // fechosCaixaHotel: [{id, data, linhas:[{formaPagamento,conta,tipoVenda,valor}], total, lancamentoIds, criadoEm}]
   // hospedes: [{id, nome, documento, contacto, email, morada, pais, notas, dataPrimeira, totalEstadias, fidelizacao}]
   // estadias: [{id, hospedeId, checkinReal, checkoutReal, quartoId, taxaRef, notas, faturaRef}]
@@ -142,6 +142,9 @@ let DBHotel = {
   //   valor > 0 = a débito do hóspede (consumo/extra); valor negativo/'pagamento'/'sinal' reduz o saldo em aberto
   // faturas: [{id, reservaId, numero, itens:[{descricao,valor}], total, formaPagamento, dataEmissao, lancamentoId}]
   // reservasCanalExterno: [{id, canalId, uid, quartoId, checkinPrevisto, checkoutPrevisto, hospedeNome, origemUrl}]
+  comunicacoes: []
+  // comunicacoes: [{id, reservaId, tipo:'confirmacao'|'lembrete_checkin'|'feedback', destinatarioEmail,
+  //   assunto, corpo, estado:'pendente'|'enviado'|'sem_email', geradoEm, enviarApartirDe, enviadoEm}]
 };
 
 let versaoHotel = null;
@@ -170,12 +173,13 @@ async function carregarDadosHotel(){
       return;
     }
 
-    DBHotel = Object.assign({tiposQuarto:[],quartos:[],reservas:[],bloqueios:[],hospedes:[],estadias:[],folio:[],faturas:[],reservasCanalExterno:[],configCanais:{icalImportUrls:[]},fechosCaixaHotel:[]}, data.data || {});
+    DBHotel = Object.assign({tiposQuarto:[],quartos:[],reservas:[],bloqueios:[],hospedes:[],estadias:[],folio:[],faturas:[],reservasCanalExterno:[],configCanais:{icalImportUrls:[]},fechosCaixaHotel:[],comunicacoes:[]}, data.data || {});
     if(!DBHotel.folio) DBHotel.folio = [];
     if(!DBHotel.faturas) DBHotel.faturas = [];
     if(!DBHotel.reservasCanalExterno) DBHotel.reservasCanalExterno = [];
     if(!DBHotel.configCanais) DBHotel.configCanais = {icalImportUrls:[]};
     if(!DBHotel.fechosCaixaHotel) DBHotel.fechosCaixaHotel = [];
+    if(!DBHotel.comunicacoes) DBHotel.comunicacoes = [];
     versaoHotel = data.versao || 1;
   }catch(e){
     console.warn('Erro ao carregar dados de hotelaria:', e);
@@ -422,6 +426,171 @@ function registarEstadiaHotel(reservaId, checkinReal, checkoutReal, quartoId, no
   }
   
   return estadia;
+}
+
+/* ============================================================
+   COMUNICAÇÃO AUTOMÁTICA COM O HÓSPEDE
+   ============================================================
+   Este é um sistema estático (frontend + Supabase como base de dados),
+   sem servidor de e-mail próprio — por isso "automático" aqui significa:
+   o sistema deteta sozinho QUANDO cada mensagem deve existir (reserva
+   criada, check-in a aproximar-se, estadia terminada) e prepara o
+   assunto/corpo prontos a enviar, numa fila (DBHotel.comunicacoes).
+   O envio em si é feito com um clique em "✉️ Enviar" — abre o cliente
+   de e-mail do utilizador (mailto:) já preenchido — ou pode ser copiado
+   para outro sistema de envio. Não há disparo automático sem alguém
+   abrir a app (não existe cron/servidor), por isso a Fila de Comunicações
+   deve ser consultada regularmente (ex.: ao abrir o dia). */
+const CONFIG_COMUNICACOES_HOTEL = {
+  diasAntesLembreteCheckin: 2,   // quantos dias antes do check-in previsto o lembrete fica pronto a enviar
+  diasDepoisFeedback: 1          // quantos dias depois do check-out o pedido de feedback fica pronto a enviar
+};
+
+function hospedeDaReservaHotel(reserva){
+  return reserva.hospedeId ? DBHotel.hospedes.find(h => h.id === reserva.hospedeId) : null;
+}
+
+/* Gera o assunto/corpo de cada tipo de comunicação. Mantido simples e
+   em texto corrido (sem HTML) para funcionar bem tanto em mailto: como
+   colado à mão num sistema de e-mail/WhatsApp. */
+function templateComunicacaoHotel(tipo, reserva){
+  const tipoQuarto = DBHotel.tiposQuarto.find(t => t.id === reserva.tipoId);
+  const quarto = DBHotel.quartos.find(q => q.id === reserva.quartoId);
+  const nomeQuarto = quarto ? `Quarto ${quarto.numero}${tipoQuarto ? ' — ' + tipoQuarto.nome : ''}` : (tipoQuarto ? tipoQuarto.nome : 'a atribuir');
+  const nome = reserva.hospedeNome || 'Hóspede';
+
+  if(tipo === 'confirmacao'){
+    return {
+      assunto: `Confirmação da sua reserva — Zoom's Lodge`,
+      corpo: `Olá ${nome},\n\n`
+        + `A sua reserva no Zoom's Lodge está confirmada. Seguem os detalhes:\n\n`
+        + `Check-in: ${reserva.checkinPrevisto}\n`
+        + `Check-out: ${reserva.checkoutPrevisto}\n`
+        + `Quarto: ${nomeQuarto}\n`
+        + `Nº de hóspedes: ${reserva.numHospedes || 1}\n`
+        + `Total da reserva: ${reserva.totalReserva || 0} Kz\n`
+        + `Sinal pago: ${reserva.sinal || 0} Kz\n\n`
+        + `Se precisar de alterar ou cancelar a reserva, contacte-nos com a maior antecedência possível.\n\n`
+        + `Esperamos por si!\nEquipa Zoom's Lodge`
+    };
+  }
+  if(tipo === 'lembrete_checkin'){
+    return {
+      assunto: `Lembrete: o seu check-in aproxima-se — Zoom's Lodge`,
+      corpo: `Olá ${nome},\n\n`
+        + `Faltam poucos dias para a sua estadia no Zoom's Lodge!\n\n`
+        + `Check-in previsto: ${reserva.checkinPrevisto}\n`
+        + `Check-out previsto: ${reserva.checkoutPrevisto}\n`
+        + `Quarto: ${nomeQuarto}\n\n`
+        + `Traga um documento de identificação válido para o check-in. Se tiver alguma preferência ou pedido especial, responda a este e-mail.\n\n`
+        + `Até já!\nEquipa Zoom's Lodge`
+    };
+  }
+  if(tipo === 'feedback'){
+    return {
+      assunto: `Como foi a sua estadia? — Zoom's Lodge`,
+      corpo: `Olá ${nome},\n\n`
+        + `Esperamos que tenha gostado da sua estadia connosco entre ${reserva.checkinPrevisto} e ${reserva.checkoutPrevisto}.\n\n`
+        + `A sua opinião é muito importante para continuarmos a melhorar — responda a este e-mail com o seu feedback, ou deixe uma avaliação online.\n\n`
+        + `Obrigado por escolher o Zoom's Lodge. Esperamos recebê-lo novamente em breve!\n\n`
+        + `Equipa Zoom's Lodge`
+    };
+  }
+  return {assunto:'', corpo:''};
+}
+
+/* Cria (se ainda não existir) uma comunicação pendente na fila para
+   uma reserva+tipo. Evita duplicados — cada reserva só tem uma
+   comunicação de cada tipo. enviarApartirDe é informativo (mostra
+   quando a mensagem passa a fazer sentido ser enviada); para a
+   confirmação é imediato. */
+function criarComunicacaoHotel(reservaId, tipo, enviarApartirDe=null){
+  DBHotel.comunicacoes = DBHotel.comunicacoes || [];
+  const jaExiste = DBHotel.comunicacoes.some(c => c.reservaId === reservaId && c.tipo === tipo);
+  if(jaExiste) return null;
+
+  const reserva = DBHotel.reservas.find(r => r.id === reservaId);
+  if(!reserva) return null;
+  const hospede = hospedeDaReservaHotel(reserva);
+  const email = (hospede && hospede.email) || '';
+  const {assunto, corpo} = templateComunicacaoHotel(tipo, reserva);
+
+  const comunicacao = {
+    id: uidHotel(),
+    reservaId,
+    tipo,
+    destinatarioEmail: email,
+    assunto, corpo,
+    estado: email ? 'pendente' : 'sem_email',
+    geradoEm: new Date().toISOString(),
+    enviarApartirDe: enviarApartirDe || new Date().toISOString().split('T')[0],
+    enviadoEm: null
+  };
+  DBHotel.comunicacoes.push(comunicacao);
+  return comunicacao;
+}
+
+/* Percorre as reservas e garante que a fila tem os itens que faltam:
+   - Lembrete de check-in: reservas cujo check-in previsto está a
+     CONFIG_COMUNICACOES_HOTEL.diasAntesLembreteCheckin dias ou menos
+     (e ainda não passou), desde que a reserva não esteja cancelada.
+   - Feedback pós-estadia: reservas já com check-out real feito.
+   Chamar isto ao carregar a app (e ao mudar de dia) garante que a
+   fila fica sempre atualizada, mesmo sem cron/servidor — é o utilizador,
+   ao abrir a app, que "dispara" a atualização. A confirmação é criada
+   à parte, no momento em que a reserva é submetida (ver submeterReserva). */
+function atualizarFilaComunicacoesHotel(){
+  DBHotel.comunicacoes = DBHotel.comunicacoes || [];
+  const hoje = new Date();
+  hoje.setHours(0,0,0,0);
+
+  DBHotel.reservas.forEach(r => {
+    if(r.estado === 'cancelada') return;
+
+    // Lembrete de check-in
+    if(r.checkinPrevisto && !r.checkinReal){
+      const dataCheckin = new Date(r.checkinPrevisto);
+      const diffDias = Math.round((dataCheckin - hoje) / 86400000);
+      if(diffDias <= CONFIG_COMUNICACOES_HOTEL.diasAntesLembreteCheckin && diffDias >= 0){
+        criarComunicacaoHotel(r.id, 'lembrete_checkin', r.checkinPrevisto);
+      }
+    }
+
+    // Feedback pós-estadia
+    if(r.checkoutReal){
+      const dataCheckout = new Date(r.checkoutReal);
+      dataCheckout.setDate(dataCheckout.getDate() + CONFIG_COMUNICACOES_HOTEL.diasDepoisFeedback);
+      criarComunicacaoHotel(r.id, 'feedback', dataCheckout.toISOString().split('T')[0]);
+    }
+  });
+}
+
+/* Abre o cliente de e-mail do utilizador com o rascunho pronto e
+   marca a comunicação como enviada (assume-se que quem clicou vai
+   mesmo enviar — não há confirmação de entrega, tal como qualquer
+   envio manual). */
+function enviarComunicacaoHotel(comunicacaoId){
+  const c = (DBHotel.comunicacoes||[]).find(x => x.id === comunicacaoId);
+  if(!c) return;
+  if(!c.destinatarioEmail){ toastHotel('Este hóspede não tem e-mail registado — atualize a ficha do hóspede.'); return; }
+  const mailto = `mailto:${encodeURIComponent(c.destinatarioEmail)}?subject=${encodeURIComponent(c.assunto)}&body=${encodeURIComponent(c.corpo)}`;
+  window.location.href = mailto;
+  c.estado = 'enviado';
+  c.enviadoEm = new Date().toISOString();
+  saveDBHotel();
+}
+
+function marcarComunicacaoEnviadaHotel(comunicacaoId){
+  const c = (DBHotel.comunicacoes||[]).find(x => x.id === comunicacaoId);
+  if(!c) return;
+  c.estado = 'enviado';
+  c.enviadoEm = new Date().toISOString();
+  saveDBHotel();
+}
+
+function apagarComunicacaoHotel(comunicacaoId){
+  DBHotel.comunicacoes = (DBHotel.comunicacoes||[]).filter(c => c.id !== comunicacaoId);
+  saveDBHotel();
 }
 
 /* ---------- ligação (opcional) à Tesouraria/Contabilidade ----------
@@ -1004,6 +1173,57 @@ function printDocHTMLHotel({code, title, subtitle, sections=[], gridHTML='', not
   const noteHTML = note ? `<div class="print-note">${note}</div>` : '';
   const sigHTML = signatures.length ? `<div class="print-signatures">${signatures.map(s=>`<div class="print-sig"><div class="print-sig-line"></div><span>${s}</span></div>`).join('')}</div>` : '';
   return head + sectionsHTML + (gridHTML||'') + noteHTML + sigHTML;
+}
+
+/* ---------- Impressão do Talão de Reserva (para o hóspede assinar) ----------
+   Documento de confirmação da reserva, com todos os dados acordados
+   (hóspede, quarto, período, tarifa, sinal, condições) para o hóspede
+   conferir e assinar — normalmente entregue/assinado no check-in ou no
+   ato da reserva presencial. Usa o mesmo motor de impressão (abrirImpressaoHotel
+   / printDocHTMLHotel) já usado no Relatório Operacional. */
+function imprimirTalaoReservaHotel(reservaId){
+  const r = DBHotel.reservas.find(x => x.id === reservaId);
+  if(!r) return;
+  const tipo = DBHotel.tiposQuarto.find(t => t.id === r.tipoId);
+  const quarto = DBHotel.quartos.find(q => q.id === r.quartoId);
+  const plano = DBHotel.planosTarifarios.find(p => p.id === r.planoId);
+  const canal = DBHotel.canais.find(c => c.id === r.canalId);
+  const saldoReserva = Math.max(0, Number(r.totalReserva||0) - Number(r.sinal||0));
+
+  abrirImpressaoHotel(printDocHTMLHotel({
+    code: 'RES-' + r.id.slice(-6).toUpperCase(),
+    title: 'Talão de Reserva',
+    subtitle: 'Confirmação dos dados e condições da reserva — a assinar pelo hóspede como confirmação de aceitação.',
+    sections: [
+      {heading: 'Dados do Hóspede', rows: [
+        ['Nome', r.hospedeNome || '—'],
+        ['Documento de Identificação', r.hospedeDoc || '—'],
+        ['Contacto', r.hospedeContacto || '—'],
+        ['Nº de Hóspedes', r.numHospedes || 1],
+      ]},
+      {heading: 'Dados da Reserva', rows: [
+        ['Quarto', quarto ? `${quarto.numero} (${tipo ? tipo.nome : ''})` : (tipo ? tipo.nome : '—')],
+        ['Check-in Previsto', r.checkinPrevisto || '—'],
+        ['Check-out Previsto', r.checkoutPrevisto || '—'],
+        ['Nº de Noites', r.numNoites || '—'],
+        ['Plano Tarifário', plano ? plano.nome : '—'],
+        ['Canal de Reserva', canal ? canal.nome : '—'],
+        ['Estado da Reserva', r.estado || '—'],
+      ], highlight:true},
+      {heading: 'Valores', rows: [
+        ['Preço por Noite', `${r.precoNoite||0} Kz`],
+        ['Total da Reserva', `${r.totalReserva||0} Kz`],
+        ['Sinal Pago', `${r.sinal||0} Kz`],
+        ['Saldo a Pagar (no check-in/check-out)', `${saldoReserva} Kz`],
+      ]},
+      ...(r.observacoes || r.preferencias ? [{heading: 'Observações / Preferências', rows: [
+        ['Observações', r.observacoes || '—'],
+        ...(r.preferencias ? [['Preferências', r.preferencias]] : []),
+      ]}] : []),
+    ],
+    note: 'Ao assinar, o hóspede confirma que os dados acima estão corretos e aceita as condições de reserva, incluindo a política de cancelamento e o saldo a liquidar no check-in ou check-out.',
+    signatures: ['Hóspede · Data', 'Receção · Data'],
+  }));
 }
 
 /* Monta e abre, numa única folha, o Relatório Operacional Diário
