@@ -630,6 +630,22 @@ async function gerarLancamentoReceitaHotel(reserva, valor, descricao, opcoes={})
   });
 }
 
+/* Classifica o valor pago no momento da reserva face ao total, para decidir
+   se deve ligar-se de imediato aos lançamentos da Tesouraria (espelhar na
+   conta real da empresa): 'total' (pagamento 100%+), 'sinal50' (>=50% do
+   total) ou 'parcial' (<50%, fica só registado no folio até se decidir
+   lançar manualmente). */
+function classificarPagamentoReservaHotel(valorPago, totalReserva){
+  const total = Number(totalReserva) || 0;
+  const pago = Number(valorPago) || 0;
+  if(pago <= 0) return 'nenhum';
+  if(total <= 0) return 'parcial';
+  const percentual = pago / total;
+  if(percentual >= 0.999) return 'total';
+  if(percentual >= 0.5) return 'sinal50';
+  return 'parcial';
+}
+
 /* ============================================================
    CONTA CORRENTE DO HÓSPEDE (FOLIO) — consumos, extras, sinais
    ============================================================ */
