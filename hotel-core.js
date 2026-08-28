@@ -59,6 +59,9 @@ const TIPOS_VENDA_ZOOMS_LODGE_HOTEL = {
   "Hospedagem": "Prestação de Serviços de Alojamento",
   "Restauração": "Receitas de Restauração",
   "Bar": "Receitas de Bar e Bebidas",
+  "Lavandaria": "Receitas de Lavandaria",
+  "Transfer": "Receitas de Transfer",
+  "Taxa sobre o Valor": "Taxas e Outros Encargos",
   "Outros Serviços": "Receitas de Outros Serviços"
 };
 
@@ -362,10 +365,14 @@ function validarCupomHotel(codigo){
 }
 
 /* ---------- Gestão de Hóspedes e Ficha ---------- */
-function obterOuCriarHospede(nome, documento, contacto, email=''){
+function obterOuCriarHospede(nome, documento, contacto, email='', genero=''){
   // Se existe hóspede com este documento, retorna-o
   let hospede = DBHotel.hospedes.find(h => h.documento === documento);
-  if(hospede) return hospede;
+  if(hospede){
+    // Preenche o género se ainda não estava definido (não sobrepõe um já registado).
+    if(genero && !hospede.genero) hospede.genero = genero;
+    return hospede;
+  }
   
   // Criar novo hóspede
   hospede = {
@@ -374,6 +381,7 @@ function obterOuCriarHospede(nome, documento, contacto, email=''){
     documento: documento,
     contacto: contacto,
     email: email,
+    genero: genero || '',
     morada: '',
     pais: '',
     notas: '',
@@ -652,10 +660,10 @@ function classificarPagamentoReservaHotel(valorPago, totalReserva){
 
 /* Adiciona um lançamento ao folio de uma reserva.
    tipo: 'consumo' | 'extra' | 'desconto' | 'sinal' | 'pagamento'
-   tipoVenda (só relevante para consumo/extra): 'Hospedagem'|'Restauração'|'Bar'|'Outros Serviços'
+   tipoVenda (só relevante para consumo/extra): 'Hospedagem'|'Restauração'|'Bar'|'Lavandaria'|'Transfer'|'Taxa sobre o Valor'|'Outros Serviços'
    — decide em que Categoria de Receita este valor vai cair no Tesoucantábil.
    Convenção: consumo/extra somam ao saldo devedor; desconto/sinal/pagamento reduzem. */
-function adicionarFolioHotel(reservaId, {tipo, descricao, tipoVenda='Hospedagem', valor, formaPagamento=''}){
+function adicionarFolioHotel(reservaId, {tipo, descricao, tipoVenda='Hospedagem', valor, formaPagamento='', pago=false}){
   const item = {
     id: uidHotel(),
     reservaId,
@@ -664,7 +672,8 @@ function adicionarFolioHotel(reservaId, {tipo, descricao, tipoVenda='Hospedagem'
     descricao,
     tipoVenda,
     valor: Number(valor)||0,
-    formaPagamento
+    formaPagamento,
+    pago: !!pago
   };
   DBHotel.folio.push(item);
   return item;
@@ -678,10 +687,13 @@ function listarFolioReservaHotel(reservaId){
   return DBHotel.folio.filter(f => f.reservaId === reservaId).sort((a,b)=> a.data.localeCompare(b.data));
 }
 
-/* Total consumido em Extras/Consumos (não inclui a diária da reserva) */
+/* Total consumido em Extras/Consumos (não inclui a diária da reserva).
+   Exclui os que já foram pagos na hora (pago:true) — esses já foram
+   lançados como venda na Tesouraria e não devem voltar a entrar no
+   saldo em aberto do check-out. */
 function totalExtrasFolioHotel(reservaId){
   return listarFolioReservaHotel(reservaId)
-    .filter(f => f.tipo === 'consumo' || f.tipo === 'extra')
+    .filter(f => (f.tipo === 'consumo' || f.tipo === 'extra') && !f.pago)
     .reduce((s,f)=> s + f.valor, 0);
 }
 
@@ -740,7 +752,7 @@ async function gerarFaturasSplitHotel(reservaId, divisoes){
 
     if(typeof adicionarLancamentoPartilhado === 'function'){
       // Um Lançamento por item, para cada um cair na Categoria de Receita certa
-      // (Hospedagem/Restauração/Bar/Outros), tal como o Tesoucantábil espera.
+      // (Hospedagem/Restauração/Bar/Lavandaria/Transfer/Taxa sobre o Valor/Outros), tal como o Tesoucantábil espera.
       for(const item of (div.itens||[])){
         const tipoVenda = item.tipoVenda || 'Hospedagem';
         const categoria = TIPOS_VENDA_ZOOMS_LODGE_HOTEL[tipoVenda] || TIPOS_VENDA_ZOOMS_LODGE_HOTEL['Hospedagem'];
