@@ -276,7 +276,14 @@ function getOcupacaoHotel(data){
   });
   
   DBHotel.reservas.forEach(r => {
-    if(r.estado !== 'cancelada' && data >= r.checkinPrevisto && data < r.checkoutPrevisto){
+    // Reservas canceladas ou já com check-out feito não devem ocupar o mapa
+    if(r.estado === 'cancelada' || r.estado === 'checkout') return;
+
+    // Se já houve check-out (mesmo antecipado), usa essa data real como limite;
+    // caso contrário, usa a data de check-out prevista.
+    const fimEfetivo = r.checkoutReal || r.checkoutPrevisto;
+
+    if(data >= r.checkinPrevisto && data < fimEfetivo){
       ocupacao[r.quartoId] = {estado: r.estado, id: r.id};
     }
   });
