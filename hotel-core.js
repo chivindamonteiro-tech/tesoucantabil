@@ -146,9 +146,11 @@ let DBHotel = {
   //   valor > 0 = a débito do hóspede (consumo/extra); valor negativo/'pagamento'/'sinal' reduz o saldo em aberto
   // faturas: [{id, reservaId, numero, itens:[{descricao,valor}], total, formaPagamento, dataEmissao, lancamentoId}]
   // reservasCanalExterno: [{id, canalId, uid, quartoId, checkinPrevisto, checkoutPrevisto, hospedeNome, origemUrl}]
-  comunicacoes: []
+  comunicacoes: [],
   // comunicacoes: [{id, reservaId, tipo:'confirmacao'|'lembrete_checkin'|'feedback', destinatarioEmail,
   //   assunto, corpo, estado:'pendente'|'enviado'|'sem_email', geradoEm, enviarApartirDe, enviadoEm}]
+  limpezasFeitas: []
+  // limpezasFeitas: [{quartoId, data, confirmadoEm}] — confirmação manual de que um quarto foi limpo numa data
 };
 
 let versaoHotel = null;
@@ -177,13 +179,14 @@ async function carregarDadosHotel(){
       return;
     }
 
-    DBHotel = Object.assign({tiposQuarto:[],quartos:[],reservas:[],bloqueios:[],hospedes:[],estadias:[],folio:[],faturas:[],reservasCanalExterno:[],configCanais:{icalImportUrls:[]},fechosCaixaHotel:[],comunicacoes:[]}, data.data || {});
+    DBHotel = Object.assign({tiposQuarto:[],quartos:[],reservas:[],bloqueios:[],hospedes:[],estadias:[],folio:[],faturas:[],reservasCanalExterno:[],configCanais:{icalImportUrls:[]},fechosCaixaHotel:[],comunicacoes:[],limpezasFeitas:[]}, data.data || {});
     if(!DBHotel.folio) DBHotel.folio = [];
     if(!DBHotel.faturas) DBHotel.faturas = [];
     if(!DBHotel.reservasCanalExterno) DBHotel.reservasCanalExterno = [];
     if(!DBHotel.configCanais) DBHotel.configCanais = {icalImportUrls:[]};
     if(!DBHotel.fechosCaixaHotel) DBHotel.fechosCaixaHotel = [];
     if(!DBHotel.comunicacoes) DBHotel.comunicacoes = [];
+    if(!DBHotel.limpezasFeitas) DBHotel.limpezasFeitas = [];
     versaoHotel = data.versao || 1;
   }catch(e){
     console.warn('Erro ao carregar dados de hotelaria:', e);
@@ -289,6 +292,59 @@ function getOcupacaoHotel(data){
   });
   
   return ocupacao;
+}
+
+/* ---------- Lembretes Operacionais do Dia (Check-in / Check-out) ----------
+   Sistema estático (sem cron/servidor): recalculado sempre que a app é
+   aberta/renderizada, com base na data de hoje.
+   - checkinsHoje: reservas cujo check-in está previsto para hoje — já
+     entram automaticamente no Relatório da Cozinha (não é preciso mais
+     nenhuma ação para isso; serve só de aviso/confirmação visual).
+   - checkoutsPendentesHoje: reservas cujo check-out está previsto para
+     hoje e que ainda não foram confirmadas no sistema (estado ainda não
+     é 'checkout') — lembrete para a receção ir confirmar a saída. */
+/* ---------- Confirmação Manual de Limpeza ----------
+   Não há, por natureza, um sinal automático de "quarto limpo" (ao
+   contrário do check-out, que já é uma ação registada no sistema) —
+   por isso a equipa de limpeza/receção confirma manualmente, quarto a
+   quarto, através do lembrete no ecrã. */
+function limpezaConfirmadaHotel(quartoId, data){
+  return (DBHotel.limpezasFeitas||[]).some(l => l.quartoId === quartoId && l.data === data);
+}
+
+function confirmarLimpezaHotel(quartoId, data){
+  DBHotel.limpezasFeitas = DBHotel.limpezasFeitas || [];
+  if(!limpezaConfirmadaHotel(quartoId, data)){
+    DBHotel.limpezasFeitas.push({quartoId, data, confirmadoEm: new Date().toISOString()});
+    saveDBHotel();
+  }
+}
+
+function getLembretesOperacionaisHotel(){
+  const hoje = new Date().toISOString().split('T')[0];
+
+  const checkinsHoje = DBHotel.reservas.filter(r =>
+    r.estado !== 'cancelada' && r.checkinPrevisto === hoje
+  );
+
+  const checkoutsPendentesHoje = DBHotel.reservas.filter(r =>
+    r.estado !== 'cancelada' && r.estado !== 'checkout' && r.checkoutPrevisto === hoje
+  );
+
+  // Quartos a limpar hoje: os que fazem check-out hoje (saída, mesmo já
+  // confirmada) e os que fazem check-in hoje (limpeza prévia à chegada),
+  // excluindo os já confirmados como limpos nesta data.
+  const quartosParaLimpar = new Map();
+  DBHotel.reservas.forEach(r => {
+    if(r.estado === 'cancelada') return;
+    if((r.checkoutPrevisto === hoje || r.checkinPrevisto === hoje) && !limpezaConfirmadaHotel(r.quartoId, hoje)){
+      const quarto = DBHotel.quartos.find(q => q.id === r.quartoId);
+      quartosParaLimpar.set(r.quartoId, quarto ? quarto.numero : r.quartoId);
+    }
+  });
+  const limpezaPendenteHoje = Array.from(quartosParaLimpar, ([quartoId, numero]) => ({quartoId, numero}));
+
+  return {hoje, checkinsHoje, checkoutsPendentesHoje, limpezaPendenteHoje};
 }
 
 function calcularNoitesHotel(dataIni, dataFim){
