@@ -149,8 +149,14 @@ let DBHotel = {
   comunicacoes: [],
   // comunicacoes: [{id, reservaId, tipo:'confirmacao'|'lembrete_checkin'|'feedback', destinatarioEmail,
   //   assunto, corpo, estado:'pendente'|'enviado'|'sem_email', geradoEm, enviarApartirDe, enviadoEm}]
-  limpezasFeitas: []
+  limpezasFeitas: [],
   // limpezasFeitas: [{quartoId, data, confirmadoEm}] — confirmação manual de que um quarto foi limpo numa data
+  grupos: []
+  // grupos: [{id, nomeEmpresa, nif, contacto, email, responsavel, observacoes, criadoEm}] — ficha
+  //   da empresa/entidade de uma Reserva de Grupo (vários quartos reservados em simultâneo).
+  //   Cada quarto do grupo continua a ser uma reserva normal em DBHotel.reservas, só que com
+  //   o campo reserva.grupoId a apontar para o id aqui — assim toda a lógica já existente de
+  //   folio, check-in/out, comunicações e impressão por quarto continua a funcionar sem alterações.
 };
 
 let versaoHotel = null;
@@ -179,7 +185,7 @@ async function carregarDadosHotel(){
       return;
     }
 
-    DBHotel = Object.assign({tiposQuarto:[],quartos:[],reservas:[],bloqueios:[],hospedes:[],estadias:[],folio:[],faturas:[],reservasCanalExterno:[],configCanais:{icalImportUrls:[]},fechosCaixaHotel:[],comunicacoes:[],limpezasFeitas:[]}, data.data || {});
+    DBHotel = Object.assign({tiposQuarto:[],quartos:[],reservas:[],bloqueios:[],hospedes:[],estadias:[],folio:[],faturas:[],reservasCanalExterno:[],configCanais:{icalImportUrls:[]},fechosCaixaHotel:[],comunicacoes:[],limpezasFeitas:[],grupos:[]}, data.data || {});
     if(!DBHotel.folio) DBHotel.folio = [];
     if(!DBHotel.faturas) DBHotel.faturas = [];
     if(!DBHotel.reservasCanalExterno) DBHotel.reservasCanalExterno = [];
@@ -187,6 +193,7 @@ async function carregarDadosHotel(){
     if(!DBHotel.fechosCaixaHotel) DBHotel.fechosCaixaHotel = [];
     if(!DBHotel.comunicacoes) DBHotel.comunicacoes = [];
     if(!DBHotel.limpezasFeitas) DBHotel.limpezasFeitas = [];
+    if(!DBHotel.grupos) DBHotel.grupos = [];
     versaoHotel = data.versao || 1;
   }catch(e){
     console.warn('Erro ao carregar dados de hotelaria:', e);
@@ -500,6 +507,53 @@ function registarEstadiaHotel(reservaId, checkinReal, checkoutReal, quartoId, no
   }
   
   return estadia;
+}
+
+/* ============================================================
+   RESERVAS DE GRUPO (EMPRESAS) — várias reservas de quarto em
+   simultâneo, ligadas por um grupoId comum a uma única ficha de
+   empresa/responsável. Cada quarto continua a ser uma reserva
+   normal em DBHotel.reservas (com reserva.grupoId a apontar para
+   cá) — assim toda a lógica já existente de Folio, check-in/out,
+   Comunicações e impressão por quarto funciona sem alterações;
+   esta secção só junta o que é comum aos quartos do mesmo grupo.
+   ============================================================ */
+function criarGrupoReservaHotel({nomeEmpresa, nif='', contacto='', email='', responsavel='', observacoes=''}){
+  const grupo = {
+    id: uidHotel(),
+    nomeEmpresa, nif, contacto, email, responsavel, observacoes,
+    criadoEm: new Date().toISOString()
+  };
+  DBHotel.grupos.push(grupo);
+  return grupo;
+}
+
+function getReservasDoGrupoHotel(grupoId){
+  return DBHotel.reservas.filter(r => r.grupoId === grupoId);
+}
+
+/* Agrega os valores de todos os quartos ativos (não cancelados) de um
+   grupo — total contratado, total já pago/abatido (via Folio de cada
+   quarto) e saldo em aberto — reaproveitando as mesmas funções do
+   Folio individual, quarto a quarto. */
+function calcularTotaisGrupoHotel(grupoId){
+  const reservas = getReservasDoGrupoHotel(grupoId).filter(r => r.estado !== 'cancelada');
+  return reservas.reduce((acc, r) => {
+    acc.totalReserva += Number(r.totalReserva) || 0;
+    acc.totalPago += totalPagoFolioHotel(r.id);
+    acc.saldo += calcularSaldoFolioHotel(r.id);
+    return acc;
+  }, {totalReserva:0, totalPago:0, saldo:0, numQuartos: reservas.length});
+}
+
+/* Cancela todas as reservas do grupo que ainda não fizeram check-out
+   (as que já saíram, ou já estavam canceladas, ficam como estavam). */
+function cancelarGrupoHotel(grupoId){
+  const reservas = getReservasDoGrupoHotel(grupoId);
+  reservas.forEach(r => {
+    if(r.estado !== 'checkout' && r.estado !== 'cancelada') r.estado = 'cancelada';
+  });
+  return reservas.length;
 }
 
 /* ============================================================
@@ -1343,6 +1397,65 @@ function imprimirTalaoReservaHotel(reservaId){
     gridHTML: gridFolio,
     note: 'Ao assinar, o hóspede confirma que os dados acima estão corretos e aceita as condições de reserva, incluindo a política de cancelamento, quaisquer taxas cobradas em percentagem sobre o preço da reserva, e o saldo a liquidar no check-in ou check-out.',
     signatures: ['Hóspede · Data', 'Receção · Data'],
+  }));
+}
+
+/* ---------- Impressão da Ficha de Reserva de Grupo ----------
+   Documento único que reúne todos os quartos de uma Reserva de Grupo
+   (mesma empresa/entidade), com os dados da empresa, uma linha por
+   quarto (ocupante, período, total, sinal, forma de pagamento e
+   estado) e os totais agregados do grupo. Cada quarto mantém também
+   a sua própria Ficha de Reserva e Folio individuais — este documento
+   é um resumo consolidado, útil para a empresa assinar de uma vez. */
+function imprimirFichaGrupoHotel(grupoId){
+  const grupo = DBHotel.grupos.find(g => g.id === grupoId);
+  if(!grupo) return;
+  const reservas = getReservasDoGrupoHotel(grupoId);
+  const totais = calcularTotaisGrupoHotel(grupoId);
+
+  const gridQuartos = `
+    <h3 class="print-section-title">🛏️ Quartos da Reserva de Grupo (${reservas.length})</h3>
+    <table class="print-grid-table">
+      <thead><tr><th>Quarto</th><th>Ocupante</th><th>Período</th><th class="num">Total</th><th class="num">Sinal</th><th>Forma Pagto.</th><th>Estado</th></tr></thead>
+      <tbody>
+        ${reservas.length ? reservas.map(r => {
+          const quarto = DBHotel.quartos.find(q => q.id === r.quartoId);
+          return `<tr>
+            <td>${quarto ? quarto.numero : (r.quartoId || '—')}</td>
+            <td>${r.hospedeNome}</td>
+            <td>${r.checkinPrevisto} → ${r.checkoutPrevisto}</td>
+            <td class="num">${formatarKzHotel(r.totalReserva)} Kz</td>
+            <td class="num">${formatarKzHotel(r.sinal)} Kz</td>
+            <td>${labelFormaPagamentoHotel(r.formaPagamentoSinal)}</td>
+            <td>${r.estado}</td>
+          </tr>`;
+        }).join('') : '<tr><td colspan="7">Sem quartos associados a este grupo.</td></tr>'}
+        <tr style="font-weight:bold;">
+          <td colspan="3">TOTAL DO GRUPO (${totais.numQuartos} quarto(s) ativo(s))</td>
+          <td class="num">${formatarKzHotel(totais.totalReserva)} Kz</td>
+          <td class="num">${formatarKzHotel(totais.totalPago)} Kz pago</td>
+          <td colspan="2">Saldo: ${formatarKzHotel(totais.saldo)} Kz</td>
+        </tr>
+      </tbody>
+    </table>`;
+
+  abrirImpressaoHotel(printDocHTMLHotel({
+    code: 'GRP-' + grupo.id.slice(-6).toUpperCase(),
+    title: 'Ficha de Reserva de Grupo',
+    subtitle: 'Confirmação de vários quartos reservados em simultâneo para a mesma empresa/entidade — a assinar pelo responsável.',
+    sections: [
+      {heading: 'Dados da Empresa/Grupo', rows: [
+        ['Nome da Empresa/Grupo', grupo.nomeEmpresa || '—'],
+        ['NIF / Documento', grupo.nif || '—'],
+        ['Pessoa de Contacto', grupo.responsavel || '—'],
+        ['Contacto', grupo.contacto || '—'],
+        ['Email', grupo.email || '—'],
+      ], highlight:true},
+      ...(grupo.observacoes ? [{heading: 'Observações', rows: [['Observações', grupo.observacoes]]}] : []),
+    ],
+    gridHTML: gridQuartos,
+    note: 'Ao assinar, o responsável confirma os dados de todos os quartos listados acima, incluindo tarifas, sinais e o saldo a liquidar no check-in/check-out de cada quarto.',
+    signatures: ['Responsável da Empresa/Grupo · Data', 'Receção · Data'],
   }));
 }
 
