@@ -382,7 +382,7 @@ function calcularTarifaNoiteHotel(tipoId, data, planoId, canalId){
   return Math.round(preco);
 }
 
-function calcularTotalReservaHotel(tipoId, dataIni, dataFim, planoId, canalId, descontoAdicional=0, cupomId=null){
+function calcularTotalReservaHotel(tipoId, dataIni, dataFim, planoId, canalId, descontoAdicional=0, cupomId=null, contarUsoCupom=true){
   // Calcula total com todas as variáveis
   const noites = calcularNoitesHotel(dataIni, dataFim);
   let total = 0;
@@ -400,13 +400,15 @@ function calcularTotalReservaHotel(tipoId, dataIni, dataFim, planoId, canalId, d
     total = total * (1 - descontoAdicional / 100);
   }
   
-  // Aplicar cupom se fornecido
+  // Aplicar cupom se fornecido. contarUsoCupom=false serve para recalcular
+  // o total de uma reserva já existente (ex.: ao editá-la) sem consumir
+  // outra vez o cupão — o uso já foi contado na criação da reserva.
   if(cupomId){
     const cupom = DBHotel.cupons.find(c => c.id === cupomId);
-    if(cupom && cupom.usos_atuais < cupom.usos_max){
+    if(cupom && (!contarUsoCupom || cupom.usos_atuais < cupom.usos_max)){
       const descCupom = (total * cupom.desconto) / 100;
       total -= descCupom;
-      cupom.usos_atuais = (cupom.usos_atuais || 0) + 1;
+      if(contarUsoCupom) cupom.usos_atuais = (cupom.usos_atuais || 0) + 1;
     }
   }
   
@@ -726,7 +728,8 @@ function classificarPagamentoReservaHotel(valorPago, totalReserva){
    tipoVenda (só relevante para consumo/extra): 'Hospedagem'|'Restauração'|'Bar'|'Lavandaria'|'Transfer'|'Taxa sobre o Valor'|'Outros Serviços'
    — decide em que Categoria de Receita este valor vai cair no Tesoucantábil.
    Convenção: consumo/extra somam ao saldo devedor; desconto/sinal/pagamento reduzem. */
-function adicionarFolioHotel(reservaId, {tipo, descricao, tipoVenda='Hospedagem', valor, formaPagamento='', pago=false}){
+function adicionarFolioHotel(reservaId, {tipo, descricao, tipoVenda='Hospedagem', valor, formaPagamento='', pago=false, pct=null}){
+  const pctNum = (pct !== null && pct !== '' && pct !== undefined && !isNaN(Number(pct))) ? Number(pct) : null;
   const item = {
     id: uidHotel(),
     reservaId,
@@ -736,7 +739,8 @@ function adicionarFolioHotel(reservaId, {tipo, descricao, tipoVenda='Hospedagem'
     tipoVenda,
     valor: Number(valor)||0,
     formaPagamento,
-    pago: !!pago
+    pago: !!pago,
+    pct: pctNum // % sobre o preço da reserva usado para calcular o valor (quando aplicável) — fica gravado para poder refletir no Folio e no Talão/Ficha de Reserva
   };
   DBHotel.folio.push(item);
   return item;
@@ -1267,12 +1271,16 @@ function printDocHTMLHotel({code, title, subtitle, sections=[], gridHTML='', not
   return head + sectionsHTML + (gridHTML||'') + noteHTML + sigHTML;
 }
 
-/* ---------- Impressão do Talão de Reserva (para o hóspede assinar) ----------
+/* ---------- Impressão da Ficha de Reserva (Talão, para o hóspede assinar) ----------
    Documento de confirmação da reserva, com todos os dados acordados
    (hóspede, quarto, período, tarifa, sinal, condições) para o hóspede
    conferir e assinar — normalmente entregue/assinado no check-in ou no
    ato da reserva presencial. Usa o mesmo motor de impressão (abrirImpressaoHotel
-   / printDocHTMLHotel) já usado no Relatório Operacional. */
+   / printDocHTMLHotel) já usado no Relatório Operacional.
+   Inclui também a Forma de Pagamento do sinal e, quando existirem, os
+   lançamentos do Folio (incluindo os cobrados como % sobre o preço da
+   reserva) — para que a Ficha de Reserva reflita sempre a mesma informação
+   que consta no Folio, e não apenas o valor em Kz. */
 function imprimirTalaoReservaHotel(reservaId){
   const r = DBHotel.reservas.find(x => x.id === reservaId);
   if(!r) return;
@@ -1281,10 +1289,28 @@ function imprimirTalaoReservaHotel(reservaId){
   const plano = DBHotel.planosTarifarios.find(p => p.id === r.planoId);
   const canal = DBHotel.canais.find(c => c.id === r.canalId);
   const saldoReserva = Math.max(0, Number(r.totalReserva||0) - Number(r.sinal||0));
+  const itensFolio = listarFolioReservaHotel(reservaId);
+
+  const gridFolio = itensFolio.length ? `
+    <h3 class="print-section-title">📒 Lançamentos do Folio (Consumos, Extras, Taxas, Descontos e Pagamentos)</h3>
+    <table class="print-grid-table">
+      <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th class="num">% s/ Preço</th><th class="num">Valor</th><th>Forma de Pagamento</th></tr></thead>
+      <tbody>
+        ${itensFolio.map(f => `
+          <tr>
+            <td>${f.data}</td>
+            <td>${f.tipo}</td>
+            <td>${f.descricao}${f.tipoVenda?` (${f.tipoVenda})`:''}</td>
+            <td class="num">${(f.pct !== null && f.pct !== undefined) ? f.pct + '%' : '—'}</td>
+            <td class="num">${formatarKzHotel(f.valor)} Kz</td>
+            <td>${f.formaPagamento ? labelFormaPagamentoHotel(f.formaPagamento) : '—'}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>` : '';
 
   abrirImpressaoHotel(printDocHTMLHotel({
     code: 'RES-' + r.id.slice(-6).toUpperCase(),
-    title: 'Talão de Reserva',
+    title: 'Ficha de Reserva',
     subtitle: 'Confirmação dos dados e condições da reserva — a assinar pelo hóspede como confirmação de aceitação.',
     sections: [
       {heading: 'Dados do Hóspede', rows: [
@@ -1306,6 +1332,7 @@ function imprimirTalaoReservaHotel(reservaId){
         ['Preço por Noite', `${r.precoNoite||0} Kz`],
         ['Total da Reserva', `${r.totalReserva||0} Kz`],
         ['Sinal Pago', `${r.sinal||0} Kz`],
+        ['Forma de Pagamento do Sinal', r.sinal ? labelFormaPagamentoHotel(r.formaPagamentoSinal) : '—'],
         ['Saldo a Pagar (no check-in/check-out)', `${saldoReserva} Kz`],
       ]},
       ...(r.observacoes || r.preferencias ? [{heading: 'Observações / Preferências', rows: [
@@ -1313,7 +1340,56 @@ function imprimirTalaoReservaHotel(reservaId){
         ...(r.preferencias ? [['Preferências', r.preferencias]] : []),
       ]}] : []),
     ],
-    note: 'Ao assinar, o hóspede confirma que os dados acima estão corretos e aceita as condições de reserva, incluindo a política de cancelamento e o saldo a liquidar no check-in ou check-out.',
+    gridHTML: gridFolio,
+    note: 'Ao assinar, o hóspede confirma que os dados acima estão corretos e aceita as condições de reserva, incluindo a política de cancelamento, quaisquer taxas cobradas em percentagem sobre o preço da reserva, e o saldo a liquidar no check-in ou check-out.',
+    signatures: ['Hóspede · Data', 'Receção · Data'],
+  }));
+}
+
+/* ---------- Impressão do Folio (Conta Corrente) ----------
+   Documento com todos os lançamentos da conta corrente da reserva
+   (consumos, extras, taxas — incluindo a % sobre o preço quando
+   aplicável —, descontos, sinal e pagamentos), a Forma de Pagamento de
+   cada um, e o saldo em aberto. Usa o mesmo motor de impressão do
+   Talão / Relatório Operacional. */
+function imprimirFolioHotel(reservaId){
+  const r = DBHotel.reservas.find(x => x.id === reservaId);
+  if(!r) return;
+  const quarto = DBHotel.quartos.find(q => q.id === r.quartoId);
+  const itensFolio = listarFolioReservaHotel(reservaId);
+  const saldo = calcularSaldoFolioHotel(reservaId);
+
+  const gridFolio = `
+    <h3 class="print-section-title">📒 Lançamentos do Folio</h3>
+    <table class="print-grid-table">
+      <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th class="num">% s/ Preço</th><th class="num">Valor</th><th>Forma de Pagamento</th></tr></thead>
+      <tbody>
+        ${itensFolio.length ? itensFolio.map(f => `
+          <tr>
+            <td>${f.data}</td>
+            <td>${f.tipo}</td>
+            <td>${f.descricao}${f.tipoVenda?` (${f.tipoVenda})`:''}${f.pago?' ✔ paga':''}</td>
+            <td class="num">${(f.pct !== null && f.pct !== undefined) ? f.pct + '%' : '—'}</td>
+            <td class="num">${formatarKzHotel(f.valor)} Kz</td>
+            <td>${f.formaPagamento ? labelFormaPagamentoHotel(f.formaPagamento) : '—'}</td>
+          </tr>`).join('') : '<tr><td colspan="6">Sem lançamentos.</td></tr>'}
+        <tr style="font-weight:bold;"><td colspan="4">SALDO EM ABERTO</td><td class="num">${formatarKzHotel(saldo)} Kz</td><td></td></tr>
+      </tbody>
+    </table>`;
+
+  abrirImpressaoHotel(printDocHTMLHotel({
+    code: 'FOL-' + r.id.slice(-6).toUpperCase(),
+    title: 'Folio — Conta Corrente',
+    subtitle: 'Extrato de todos os lançamentos da conta corrente da reserva, com respetivas formas de pagamento.',
+    sections: [
+      {heading: 'Dados da Reserva', rows: [
+        ['Hóspede', r.hospedeNome || '—'],
+        ['Quarto', quarto ? quarto.numero : (r.quartoId || '—')],
+        ['Diária (base da reserva)', `${formatarKzHotel(r.totalReserva)} Kz`],
+        ['Saldo em Aberto', `${formatarKzHotel(saldo)} Kz`],
+      ], highlight:true},
+    ],
+    gridHTML: gridFolio,
     signatures: ['Hóspede · Data', 'Receção · Data'],
   }));
 }
