@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Zoom's Lodge / Bakery - Sistema de Gestão de Logística">
+<title>Logística — Zoom's Lodge [Otimizado]</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
+  
+  :root {
+    --verde-escuro: #14232B;
+    --verde: #1F6F68;
+    --verde-claro: #E4F0EE;
+    --castanho: #C89B3C;
+    --creme: #FBF3E1;
+    --bg: #F6F1E7;
+    --card: #ffffff;
+    --texto: #14232B;
+    --muted: #55666E;
+    --borda: #DDD2B8;
+    --vermelho: #A6472E;
+    --gold: #C89B3C;
+    --laranja: #B4700A;
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'Inter', 'Segoe UI', Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--texto);
+  }
+
+  /* ========== LAYOUT ========== */
+  #app { display: flex; min-height: 100vh; }
+  
+  nav {
+    width: 220px;
+    background: var(--verde-escuro);
+    color: #fff;
+    flex-shrink: 0;
+    padding: 20px 0;
+    overflow-y: auto;
+  }
+
+  nav h1 {
+    font-size: 15px;
+    padding: 0 18px 16px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    margin: 0;
+  }
+
+  nav .item {
+    padding: 10px 18px;
+    cursor: pointer;
+    font-size: 13.5px;
+    opacity: 0.82;
+    border-left: 3px solid transparent;
+    color: #fff;
+    transition: all 0.2s;
+  }
+
+  nav .item:hover {
+    opacity: 1;
+    background: rgba(246, 241, 231, 0.07);
+  }
+
+  nav .item.active {
+    opacity: 1;
+    background: var(--verde);
+    border-left: 3px solid var(--gold);
+    font-weight: 600;
+  }
+
+  main {
+    flex: 1;
+    padding: 24px 28px;
+    overflow-y: auto;
+  }
+
+  /* ========== COMPONENTES ========== */
+  h2 {
+    background: var(--verde-escuro);
+    color: #fff;
+    font-family: var(--font-display);
+    font-weight: 600;
+    padding: 12px 20px;
+    margin: 0 0 16px;
+    border-radius: 8px;
+    font-size: 17px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+  }
+
+  /* ========== DASHBOARD METRICS ========== */
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .metric-card {
+    background: white;
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+
+  .metric-label {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  .metric-value {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--verde-escuro);
+  }
+
+  .metric-sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* ========== FILTROS ========== */
+  .filters {
+    background: var(--card);
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+
+  input, select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--borda);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: var(--font-body);
+    background: #fff;
+  }
+
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--verde);
+    box-shadow: 0 0 0 3px rgba(31, 111, 104, 0.1);
+  }
+
+  /* ========== TABELAS ========== */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    background: var(--card);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  th, td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--borda);
+  }
+
+  th {
+    background: var(--verde-escuro);
+    color: #fff;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    font-weight: 600;
+  }
+
+  tbody tr:hover {
+    background: var(--verde-claro);
+  }
+
+  /* ========== BADGES ========== */
+  .badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .badge.valido { background: #D1FAE5; color: #065F46; }
+  .badge.a_vencer { background: #FEF3C7; color: #92400E; }
+  .badge.vencido { background: #F6E4E0; color: var(--vermelho); }
+  .badge.em_falta { background: #E5E7EB; color: var(--muted); }
+  .badge.central { background: #DBEAFE; color: #1E40AF; }
+  .badge.producao { background: #FFE8CC; color: var(--laranja); }
+  .badge.unidade { background: var(--verde-claro); color: var(--verde); }
+
+  /* ========== BOTÕES ========== */
+  button {
+    padding: 8px 16px;
+    background: var(--verde);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  button:hover {
+    background: var(--verde-escuro);
+  }
+
+  button.secondary {
+    background: var(--muted);
+  }
+
+  button.secondary:hover {
+    background: var(--verde-escuro);
+  }
+
+  button.small {
+    padding: 5px 10px;
+    font-size: 11px;
+    margin: 0 4px 0 0;
+  }
+
+  /* ========== ALERTAS ========== */
+  .alert-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+  }
+
+  .alert {
+    background: white;
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-left: 4px solid var(--verde);
+    animation: slideIn 0.3s ease;
+  }
+
+  .alert.success { border-left-color: #27ae60; }
+  .alert.error { border-left-color: var(--vermelho); }
+  .alert.warning { border-left-color: #f39c12; }
+
+  @keyframes slideIn {
+    from { transform: translateX(400px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  /* ========== CHARTS ========== */
+  .chart-container {
+    background: white;
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+    position: relative;
+    height: 300px;
+  }
+
+  /* ========== RESPONSIVIDADE ========== */
+  @media (max-width: 768px) {
+    #app { flex-direction: column; }
+    nav { width: 100%; }
+    main { padding: 16px 12px; }
+    .metrics { grid-template-columns: 1fr; }
+    .filters { grid-template-columns: 1fr; }
+  }
+
+  @media print {
+    nav, .filters, .alert-container { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Notificações -->
+<div class="alert-container" id="alertContainer"></div>
+
+<!-- Layout Principal -->
+<div id="app">
+  <!-- Navegação -->
+  <nav>
+    <h1>📦 Logística</h1>
+    <div class="item" data-view="dashboard" onclick="switchView('dashboard')">📊 Dashboard</div>
+    <div class="item" data-view="inventario" onclick="switchView('inventario')">📦 Inventário</div>
+    <div class="item" data-view="novo" onclick="switchView('novo')">➕ Novo Item</div>
+    <div class="item" data-view="rastreamento" onclick="switchView('rastreamento')">🔍 Rastreamento</div>
+    <div class="item" data-view="vencimentos" onclick="switchView('vencimentos')">⏰ Vencimentos</div>
+    <div class="item" data-view="relatorios" onclick="switchView('relatorios')">📊 Relatórios</div>
+    <hr style="opacity: 0.2; margin: 10px 0;">
+    <div class="item" onclick="logout()">🚪 Sair</div>
+  </nav>
+
+  <!-- Conteúdo Principal -->
+  <main id="main">
+    <!-- DASHBOARD -->
+    <section id="view-dashboard" style="display: none;">
+      <h2>📊 Dashboard de Logística</h2>
+      
+      <!-- Métricas -->
+      <div class="metrics">
+        <div class="metric-card">
+          <div class="metric-label">Total em Stock</div>
+          <div class="metric-value" id="totalStock">0</div>
+          <div class="metric-sub">Itens</div>
+        </div>
+        
+        <div class="metric-card">
+          <div class="metric-label">Itens a Vencer</div>
+          <div class="metric-value" id="itensVencer" style="color: #f39c12;">0</div>
+          <div class="metric-sub">Próximos 7 dias</div>
+        </div>
+        
+        <div class="metric-card">
+          <div class="metric-label">Itens Vencidos</div>
+          <div class="metric-value" id="itensVencidos" style="color: var(--vermelho);">0</div>
+          <div class="metric-sub">Ação imediata</div>
+        </div>
+        
+        <div class="metric-card">
+          <div class="metric-label">Valor Total</div>
+          <div class="metric-value" id="valorTotal">0 Kz</div>
+          <div class="metric-sub">Inventário</div>
+        </div>
+      </div>
+
+      <!-- Gráfico -->
+      <div class="card">
+        <h3>Movimentação nos Últimos 7 Dias</h3>
+        <div class="chart-container">
+          <canvas id="movimentacaoChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- INVENTÁRIO -->
+    <section id="view-inventario" style="display: none;">
+      <h2>📦 Inventário</h2>
+      
+      <div class="filters">
+        <div>
+          <label>Procurar</label>
+          <input type="text" id="filterProduto" placeholder="Nome ou SKU...">
+        </div>
+        <div>
+          <label>Localização</label>
+          <select id="filterLocalizacao">
+            <option value="">Todas</option>
+            <option value="central">Central</option>
+            <option value="producao">Produção</option>
+            <option value="unidade">Unidade</option>
+          </select>
+        </div>
+        <div>
+          <label>Status</label>
+          <select id="filterStatus">
+            <option value="">Todos</option>
+            <option value="valido">Válido</option>
+            <option value="a_vencer">A Vencer</option>
+            <option value="vencido">Vencido</option>
+          </select>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: flex-end;">
+          <button onclick="applyFilters()">🔍 Filtrar</button>
+          <button class="secondary" onclick="clearFilters()">Limpar</button>
+          <button class="secondary" onclick="exportCSV()">📥 CSV</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <table id="inventarioTable">
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th>SKU</th>
+              <th>Quantidade</th>
+              <th>Preço</th>
+              <th>Validade</th>
+              <th>Local</th>
+              <th>Status</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody id="inventarioBody">
+            <tr><td colspan="8" style="text-align: center; padding: 20px;">A carregar...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- NOVO ITEM -->
+    <section id="view-novo" style="display: none;">
+      <h2>➕ Novo Item</h2>
+      <div class="card">
+        <form id="formNovoItem" onsubmit="salvarItem(event)">
+          <label>Nome do Produto *</label>
+          <input type="text" name="nome" required>
+          
+          <label>SKU *</label>
+          <input type="text" name="sku" required>
+          
+          <label>Quantidade *</label>
+          <input type="number" name="quantidade" min="1" required>
+          
+          <label>Preço Unitário *</label>
+          <input type="number" name="preco" step="0.01" min="0" required>
+          
+          <label>Data de Validade</label>
+          <input type="date" name="dataValidade">
+          
+          <label>Localização *</label>
+          <select name="localizacao" required>
+            <option value="">Selecionar...</option>
+            <option value="central">Central</option>
+            <option value="producao">Produção</option>
+            <option value="unidade">Unidade</option>
+          </select>
+          
+          <label>Observações</label>
+          <textarea name="observacoes" style="min-height: 60px;"></textarea>
+          
+          <button type="submit">Guardar Item</button>
+          <button type="button" class="secondary" onclick="switchView('inventario')">Cancelar</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- RASTREAMENTO -->
+    <section id="view-rastreamento" style="display: none;">
+      <h2>🔍 Rastreamento</h2>
+      
+      <div class="filters">
+        <div style="grid-column: 1 / -1;">
+          <label>Código de Rastreamento ou SKU</label>
+          <input type="text" id="trackingCode" placeholder="Ex: TRACK-001234...">
+        </div>
+        <div style="grid-column: 1 / -1;">
+          <button onclick="rastrearItem()" style="width: auto;">🔍 Rastrear</button>
+        </div>
+      </div>
+
+      <div id="trackingResult" style="display: none;">
+        <div class="card">
+          <h3 id="trackingProductName"></h3>
+          <table style="margin-top: 12px;">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Localização</th>
+                <th>Quantidade</th>
+                <th>Operação</th>
+                <th>Observações</th>
+              </tr>
+            </thead>
+            <tbody id="trackingHistory">
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- VENCIMENTOS -->
+    <section id="view-vencimentos" style="display: none;">
+      <h2>⏰ Itens a Vencer</h2>
+      
+      <div class="filters">
+        <div>
+          <label>Próximos Dias</label>
+          <select id="filterDias">
+            <option value="7">7 dias</option>
+            <option value="14">14 dias</option>
+            <option value="30">30 dias</option>
+          </select>
+        </div>
+        <div style="display: flex; align-items: flex-end;">
+          <button onclick="filtrarVencimentos()">🔍 Filtrar</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <table id="vencimentosTable">
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th>Quantidade</th>
+              <th>Data Validade</th>
+              <th>Dias Restantes</th>
+              <th>Status</th>
+              <th>Ação</th>
+            </tr>
+          </thead>
+          <tbody id="vencimentosBody">
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- RELATÓRIOS -->
+    <section id="view-relatorios" style="display: none;">
+      <h2>📊 Relatórios</h2>
+      
+      <div class="card">
+        <h3>Gerar Relatório</h3>
+        <button onclick="gerarRelatorioPDF()">📄 PDF - Inventário Completo</button>
+        <button class="secondary" onclick="gerarRelatorioVencimentos()">📄 PDF - Vencimentos</button>
+        <button class="secondary" onclick="gerarRelatorioCustos()">📄 PDF - Análise de Custos</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+/**
+ * ============================================
+ * LOGÍSTICA - VERSÃO OTIMIZADA
+ * Dashboard + Inventário + Rastreamento
+ * ============================================
+ */
+
+let currentUser = null;
+let inventario = [];
+let movimentacoes = [];
+
+class AlertManager {
+  static show(message, type = 'info', duration = 4000) {
+    const container = document.getElementById('alertContainer');
+    const alert = document.createElement('div');
+    alert.className = `alert ${type}`;
+    alert.textContent = message;
+    container.appendChild(alert);
+    setTimeout(() => alert.remove(), duration);
+  }
+  
+  static success(msg) { this.show(msg, 'success'); }
+  static error(msg) { this.show(msg, 'error'); }
+  static warning(msg) { this.show(msg, 'warning'); }
+}
+
+function switchView(viewName) {
+  document.querySelectorAll('[id^="view-"]').forEach(el => {
+    el.style.display = 'none';
+  });
+  
+  const view = document.getElementById(`view-${viewName}`);
+  if (view) {
+    view.style.display = 'block';
+  }
+  
+  document.querySelectorAll('nav .item').forEach(item => {
+    item.classList.remove('active');
+  });
+  document.querySelector(`nav .item[data-view="${viewName}"]`)?.classList.add('active');
+  
+  if (viewName === 'dashboard') {
+    updateDashboard();
+  } else if (viewName === 'inventario') {
+    loadInventario();
+  }
+}
+
+async function updateDashboard() {
+  // Aqui viriam dados reais da API
+  document.getElementById('totalStock').textContent = '2,450';
+  document.getElementById('itensVencer').textContent = '12';
+  document.getElementById('itensVencidos').textContent = '3';
+  document.getElementById('valorTotal').textContent = '45.680 Kz';
+  
+  // Criar gráfico
+  const ctx = document.getElementById('movimentacaoChart').getContext('2d');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab', 'Dom'],
+      datasets: [{
+        label: 'Entradas',
+        data: [120, 150, 180, 140, 170, 90, 50],
+        backgroundColor: 'rgba(31, 111, 104, 0.6)',
+      }, {
+        label: 'Saídas',
+        data: [100, 120, 140, 110, 130, 80, 40],
+        backgroundColor: 'rgba(166, 71, 46, 0.6)',
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: { beginAtZero: true }
+      }
+    }
+  });
+}
+
+async function loadInventario() {
+  // TODO: Carregar de API
+  const tbody = document.getElementById('inventarioBody');
+  tbody.innerHTML = `
+    <tr>
+      <td>Farinha Premium</td>
+      <td>FAR-001</td>
+      <td>450 Kg</td>
+      <td>12.500 Kz</td>
+      <td>2026-10-15</td>
+      <td><span class="badge central">Central</span></td>
+      <td><span class="badge valido">Válido</span></td>
+      <td><button class="small">Editar</button></td>
+    </tr>
+  `;
+}
+
+async function salvarItem(event) {
+  event.preventDefault();
+  AlertManager.success('Item guardado com sucesso!');
+  switchView('inventario');
+}
+
+function applyFilters() {
+  AlertManager.info('Filtros aplicados');
+}
+
+function clearFilters() {
+  document.getElementById('filterProduto').value = '';
+  document.getElementById('filterLocalizacao').value = '';
+  document.getElementById('filterStatus').value = '';
+  loadInventario();
+}
+
+function exportCSV() {
+  AlertManager.success('Exportação iniciada');
+}
+
+function rastrearItem() {
+  const code = document.getElementById('trackingCode').value;
+  if (!code) {
+    AlertManager.warning('Insira um código de rastreamento');
+    return;
+  }
+  
+  document.getElementById('trackingResult').style.display = 'block';
+  AlertManager.success('Item rastreado');
+}
+
+function filtrarVencimentos() {
+  AlertManager.success('Vencimentos filtrados');
+}
+
+function gerarRelatorioPDF() {
+  AlertManager.success('Gerando relatório...');
+}
+
+function gerarRelatorioVencimentos() {
+  AlertManager.success('Gerando relatório...');
+}
+
+function gerarRelatorioCustos() {
+  AlertManager.success('Gerando relatório...');
+}
+
+async function logout() {
+  window.location.href = '/login';
+}
+
+// Inicialização
+window.addEventListener('load', () => {
+  console.log('✅ Logística carregado');
+  switchView('dashboard');
+});
+</script>
+
+</body>
+</html>
