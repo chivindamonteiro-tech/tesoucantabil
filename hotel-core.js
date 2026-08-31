@@ -612,7 +612,9 @@ function obterOuCriarHospede(nome, documento, contacto, email='', genero=''){
     totalEstadias: 0,
     diasTotais: 0,
     fidelizacao: 'bronze', // bronze, prata, ouro, platina
-    descricaoGuest: ''
+    descricaoGuest: '',
+    vip: false,
+    notasVip: ''
   };
   
   DBHotel.hospedes.push(hospede);
@@ -657,6 +659,240 @@ function registarEstadiaHotel(reservaId, checkinReal, checkoutReal, quartoId, no
   }
   
   return estadia;
+}
+
+/* ============================================================
+   GESTÃO DE HÓSPEDES VIP
+   ------------------------------------------------------------
+   Marcação manual de VIP (independente da fidelização automática
+   por nº de estadias), com notas próprias (ex.: preferências
+   especiais, alergias, protocolo de receção).
+   ============================================================ */
+function alternarVipHospede(hospedeId, notasVip){
+  const hospede = DBHotel.hospedes.find(h => h.id === hospedeId);
+  if(!hospede) return null;
+  hospede.vip = !hospede.vip;
+  if(notasVip !== undefined) hospede.notasVip = notasVip;
+  saveDBHotel();
+  return hospede;
+}
+
+function listaHospedesVipHotel(){
+  return DBHotel.hospedes.filter(h => h.vip || h.fidelizacao === 'platina');
+}
+
+/* ============================================================
+   MAPA VISUAL DE QUARTOS
+   ------------------------------------------------------------
+   Estado único "em tempo real" de cada quarto numa data, combinando
+   Reservas (ocupado/reservado), Bloqueios (manutenção) e
+   Housekeeping (limpeza-pendente/em-limpeza/limpo/inspeção/
+   fora-serviço) — para o mapa visual da Receção.
+   ============================================================ */
+function getStatusMapaQuartoHotel(quartoId, data){
+  const ocupacao = getOcupacaoHotel(data);
+  const ocup = ocupacao[quartoId] || {estado:'livre', id:null};
+
+  if(ocup.estado === 'checkin'){
+    return {status:'ocupado', label:'Ocupado', reservaId: ocup.id};
+  }
+  if(['confirmada','garantida','provisoria'].includes(ocup.estado)){
+    return {status:'reservado', label:'Reservado', reservaId: ocup.id};
+  }
+  if(ocup.estado === 'bloqueado'){
+    const bloqueio = DBHotel.bloqueios.find(b => b.id === ocup.id);
+    if(bloqueio && bloqueio.tipo === 'manutencao'){
+      return {status:'manutencao', label:'Manutenção', bloqueioId: ocup.id, subtipo: bloqueio.subtipo||''};
+    }
+    return {status:'reservado', label:'Reservado (Bloqueio)', bloqueioId: ocup.id};
+  }
+
+  // Sem reserva/bloqueio ativos hoje: o estado depende do Housekeeping
+  const hk = estadoTempoRealQuartoHotel(quartoId, data);
+  const mapaLabel = {
+    'limpeza-pendente':'Limpeza Pendente', 'em-limpeza':'Em Limpeza',
+    'inspecao':'Inspeção', 'manutencao':'Manutenção', 'fora-servico':'Fora de Serviço',
+    'limpo':'Limpo', 'aprovado':'Livre'
+  };
+  if(hk === 'aprovado' || !hk) return {status:'livre', label:'Livre'};
+  return {status: hk, label: mapaLabel[hk] || 'Livre'};
+}
+
+function mapaQuartosHotel(data){
+  return DBHotel.quartos.slice()
+    .sort((a,b) => String(a.numero).localeCompare(String(b.numero), undefined, {numeric:true}))
+    .map(q => {
+      const tipo = DBHotel.tiposQuarto.find(t => t.id === q.tipoId);
+      return {quarto:q, tipo, ...getStatusMapaQuartoHotel(q.id, data)};
+    });
+}
+
+/* Quartos livres neste preciso momento (para Walk-in) — usa "hoje" como
+   check-in e "amanhã" como check-out mínimo, para reaproveitar a mesma
+   verificação de conflitos das reservas normais (quartoOcupadoHotel). */
+function quartosLivresAgoraHotel(){
+  const hoje = new Date().toISOString().split('T')[0];
+  return DBHotel.quartos.filter(q => {
+    const st = getStatusMapaQuartoHotel(q.id, hoje).status;
+    return st === 'livre' || st === 'limpo';
+  });
+}
+
+/* ============================================================
+   TROCA DE QUARTO
+   ------------------------------------------------------------
+   Move uma reserva atualmente em check-in para outro quarto
+   disponível, mantendo o histórico da troca na própria reserva.
+   ============================================================ */
+function trocarQuartoReservaHotel(reservaId, novoQuartoId, motivo=''){
+  const reserva = DBHotel.reservas.find(r => r.id === reservaId);
+  if(!reserva) return {ok:false, erro:'Reserva não encontrada.'};
+  const novoQuarto = DBHotel.quartos.find(q => q.id === novoQuartoId);
+  if(!novoQuarto) return {ok:false, erro:'Quarto de destino não encontrado.'};
+  if(novoQuartoId === reserva.quartoId) return {ok:false, erro:'O quarto escolhido é o mesmo que o atual.'};
+
+  const quartoAntigo = DBHotel.quartos.find(q => q.id === reserva.quartoId);
+  reserva.historicoTrocas = reserva.historicoTrocas || [];
+  reserva.historicoTrocas.push({
+    data: new Date().toISOString(),
+    quartoAntigoId: reserva.quartoId,
+    quartoAntigoNumero: quartoAntigo ? quartoAntigo.numero : reserva.quartoId,
+    quartoNovoId: novoQuartoId,
+    quartoNovoNumero: novoQuarto.numero,
+    motivo
+  });
+  reserva.quartoId = novoQuartoId;
+
+  saveDBHotel();
+  return {ok:true, reserva, quartoAntigo, novoQuarto};
+}
+
+/* ============================================================
+   EXTENSÃO DE ESTADIA
+   ------------------------------------------------------------
+   Prolonga o check-out previsto de uma reserva já em check-in,
+   verificando que o mesmo quarto continua livre nas noites extra
+   e lançando o valor das noites adicionais no Folio (mesma tarifa
+   base da reserva original).
+   ============================================================ */
+function estenderEstadiaHotel(reservaId, novoCheckoutPrevisto){
+  const reserva = DBHotel.reservas.find(r => r.id === reservaId);
+  if(!reserva) return {ok:false, erro:'Reserva não encontrada.'};
+  if(novoCheckoutPrevisto <= reserva.checkoutPrevisto) return {ok:false, erro:'A nova data de check-out tem de ser depois da atual.'};
+
+  // Verificar se o quarto está livre nas noites extra (excluindo a própria reserva)
+  const temConflito = DBHotel.reservas.some(r =>
+    r.id !== reservaId && r.quartoId === reserva.quartoId && r.estado !== 'cancelada' &&
+    !(novoCheckoutPrevisto <= r.checkinPrevisto || reserva.checkoutPrevisto >= r.checkoutPrevisto)
+  ) || DBHotel.bloqueios.some(b =>
+    b.quartoId === reserva.quartoId &&
+    !(novoCheckoutPrevisto <= b.dataIni || reserva.checkoutPrevisto >= b.dataFim)
+  );
+  if(temConflito) return {ok:false, erro:'O quarto já tem reserva/bloqueio nas noites extra pedidas.'};
+
+  const noitesExtra = calcularNoitesHotel(reserva.checkoutPrevisto, novoCheckoutPrevisto);
+  const valorExtra = noitesExtra * (reserva.precoNoite || 0);
+
+  reserva.checkoutPrevisto = novoCheckoutPrevisto;
+  reserva.numNoites = (reserva.numNoites || 0) + noitesExtra;
+
+  if(valorExtra > 0){
+    adicionarFolioHotel(reservaId, {
+      tipo:'extra', descricao:`Extensão de estadia (+${noitesExtra} noite${noitesExtra>1?'s':''})`,
+      tipoVenda:'Hospedagem', valor: valorExtra
+    });
+  }
+
+  saveDBHotel();
+  return {ok:true, reserva, noitesExtra, valorExtra};
+}
+
+/* ============================================================
+   DEPÓSITO / CAUÇÃO
+   ------------------------------------------------------------
+   Fluxo próprio, separado do Sinal de reserva: fica retido à parte
+   no Folio (tipo 'caucao'), sem entrar no saldo em aberto do
+   check-out (calcularSaldoFolioHotel só soma sinal/pagamento/
+   desconto), e é devolvido (total ou parcialmente) no check-out
+   ou antes dele.
+   ============================================================ */
+function registarCaucaoHotel(reservaId, valor, formaPagamento='Cash', conta='CASH', obs=''){
+  const reserva = DBHotel.reservas.find(r => r.id === reservaId);
+  if(!reserva) return {ok:false, erro:'Reserva não encontrada.'};
+  reserva.caucaoValor = (reserva.caucaoValor || 0) + Number(valor);
+  reserva.caucaoFormaPagamento = formaPagamento;
+  reserva.caucaoConta = conta;
+  reserva.caucaoEstado = 'retida';
+  reserva.caucaoObs = obs;
+  adicionarFolioHotel(reservaId, {tipo:'caucao', descricao:`Depósito/Caução${obs?' — '+obs:''}`, tipoVenda:'Caução', valor: Number(valor), formaPagamento});
+  saveDBHotel();
+  return {ok:true, reserva};
+}
+
+function devolverCaucaoHotel(reservaId, valorDevolvido, obs=''){
+  const reserva = DBHotel.reservas.find(r => r.id === reservaId);
+  if(!reserva || !reserva.caucaoValor) return {ok:false, erro:'Não há caução registada nesta reserva.'};
+  reserva.caucaoValorDevolvido = (reserva.caucaoValorDevolvido || 0) + Number(valorDevolvido);
+  reserva.caucaoEstado = reserva.caucaoValorDevolvido >= reserva.caucaoValor ? 'devolvida' : 'retida-parcial';
+  reserva.caucaoObsDevolucao = obs;
+  const retido = reserva.caucaoValor - reserva.caucaoValorDevolvido;
+  adicionarFolioHotel(reservaId, {tipo:'caucao-devolucao', descricao:`Devolução de Caução${obs?' — '+obs:''}${retido>0?` (retido ${retido} Kz)`:''}`, tipoVenda:'Caução', valor: -Number(valorDevolvido)});
+  saveDBHotel();
+  return {ok:true, reserva};
+}
+
+/* ============================================================
+   WALK-IN
+   ------------------------------------------------------------
+   Reserva criada e já com check-in feito na hora, para hóspede sem
+   reserva prévia. Reaproveita obterOuCriarHospede/calcularTotal
+   ReservaHotel, mas fixa checkin/checkout reais a hoje e exige que
+   o quarto escolhido esteja livre neste momento.
+   ============================================================ */
+function criarWalkInHotel(dados){
+  const hoje = new Date().toISOString().split('T')[0];
+  const quarto = DBHotel.quartos.find(q => q.id === dados.quartoId);
+  if(!quarto) return {ok:false, erro:'Selecione um quarto.'};
+  if(quartoOcupadoHotel(quarto.id, hoje, dados.checkoutPrevisto)) return {ok:false, erro:'Esse quarto já não está livre para o período indicado.'};
+
+  const tipo = DBHotel.tiposQuarto.find(t => t.id === quarto.tipoId);
+  const noites = calcularNoitesHotel(hoje, dados.checkoutPrevisto);
+  if(noites <= 0) return {ok:false, erro:'Check-out deve ser depois de hoje.'};
+
+  const hospede = obterOuCriarHospede(dados.hospedeNome, dados.hospedeDoc, dados.hospedeContacto, dados.hospedeEmail||'', dados.hospedeGenero||'');
+  const totalReserva = calcularTotalReservaHotel(quarto.tipoId, hoje, dados.checkoutPrevisto, 'rack', 'direto', 0, null);
+
+  const reserva = {
+    id: uidHotel(),
+    hospedeId: hospede.id,
+    hospedeNome: dados.hospedeNome, hospedeDoc: dados.hospedeDoc||'', hospedeContacto: dados.hospedeContacto||'',
+    hospedeGenero: dados.hospedeGenero || '',
+    preferencias: dados.preferencias || '',
+    numHospedes: Number(dados.numHospedes) || 1,
+    quartoId: quarto.id, tipoId: quarto.tipoId,
+    checkinPrevisto: hoje, checkoutPrevisto: dados.checkoutPrevisto,
+    checkinReal: hoje, checkoutReal: null,
+    estado: 'checkin',
+    planoId: 'rack', canalId: 'direto',
+    precoNoite: tipo.precoBase, numNoites: noites,
+    totalReserva,
+    descontoAd: 0, cupomId: null,
+    sinal: Number(dados.sinal)||0,
+    formaPagamentoSinal: dados.formaPagamentoSinal || 'Cash',
+    contaSinal: dados.contaSinal || (dados.formaPagamentoSinal === 'Cash' ? 'CASH' : 'BAI-KZ-001'),
+    sinalLancado: false, sinalLancadoValor: 0,
+    observacoes: `[WALK-IN] ${dados.observacoes||''}`.trim(),
+    walkIn: true,
+    criadoEm: new Date().toISOString()
+  };
+  DBHotel.reservas.push(reserva);
+
+  if(reserva.sinal > 0){
+    adicionarFolioHotel(reserva.id, {tipo:'sinal', descricao:'Pagamento no Walk-in', valor: reserva.sinal, formaPagamento: reserva.formaPagamentoSinal});
+  }
+
+  saveDBHotel();
+  return {ok:true, reserva, quarto};
 }
 
 /* ============================================================
