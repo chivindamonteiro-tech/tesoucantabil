@@ -151,6 +151,13 @@ let DBHotel = {
   //   assunto, corpo, estado:'pendente'|'enviado'|'sem_email', geradoEm, enviarApartirDe, enviadoEm}]
   limpezasFeitas: [],
   // limpezasFeitas: [{quartoId, data, confirmadoEm}] — confirmação manual de que um quarto foi limpo numa data
+  camareiras: [],
+  // camareiras: [{id, nome, contacto, ativo}]
+  estadosQuartoHotel: [],
+  // estadosQuartoHotel: [{id, quartoId, data, estado, camareiraId, notas, minibarOk, minibarNotas, inspecionadoPor, atualizadoEm}]
+  //   estado: 'limpeza-pendente' | 'em-limpeza' | 'limpo' | 'inspecao' | 'aprovado' | 'manutencao' | 'fora-servico'
+  objetosPerdidos: [],
+  // objetosPerdidos: [{id, data, quartoId, descricao, encontradoPor, notas, estado:'guardado'|'devolvido', devolvidoA, devolvidoEm, criadoEm}]
   grupos: []
   // grupos: [{id, nomeEmpresa, nif, contacto, email, responsavel, observacoes, criadoEm}] — ficha
   //   da empresa/entidade de uma Reserva de Grupo (vários quartos reservados em simultâneo).
@@ -193,6 +200,9 @@ async function carregarDadosHotel(){
     if(!DBHotel.fechosCaixaHotel) DBHotel.fechosCaixaHotel = [];
     if(!DBHotel.comunicacoes) DBHotel.comunicacoes = [];
     if(!DBHotel.limpezasFeitas) DBHotel.limpezasFeitas = [];
+    if(!DBHotel.camareiras) DBHotel.camareiras = [];
+    if(!DBHotel.estadosQuartoHotel) DBHotel.estadosQuartoHotel = [];
+    if(!DBHotel.objetosPerdidos) DBHotel.objetosPerdidos = [];
     if(!DBHotel.grupos) DBHotel.grupos = [];
     versaoHotel = data.versao || 1;
   }catch(e){
@@ -325,6 +335,146 @@ function confirmarLimpezaHotel(quartoId, data){
     DBHotel.limpezasFeitas.push({quartoId, data, confirmadoEm: new Date().toISOString()});
     saveDBHotel();
   }
+}
+
+/* ============================================================
+   HOUSEKEEPING — Estado dos quartos, tarefas, camareiras,
+   minibar e objetos perdidos e achados.
+   ------------------------------------------------------------
+   Camada de estado por quarto/dia, à parte da confirmação binária
+   de limpezasFeitas (que continua a alimentar os lembretes do
+   dia): permite seguir o quarto por várias etapas (Limpeza
+   Pendente → Em Limpeza → Limpo → Inspeção → Aprovado), além de
+   Manutenção/Fora de Serviço. Ao chegar a 'limpo' ou 'aprovado',
+   sincroniza automaticamente com confirmarLimpezaHotel(), para
+   não duplicar a lógica dos lembretes operacionais.
+   ============================================================ */
+function getEstadoQuartoHotel(quartoId, data){
+  const registos = (DBHotel.estadosQuartoHotel||[]).filter(e => e.quartoId === quartoId && e.data === data);
+  return registos.length ? registos[registos.length - 1] : null;
+}
+
+function definirEstadoQuartoHotel(quartoId, data, estado, opcoes={}){
+  DBHotel.estadosQuartoHotel = DBHotel.estadosQuartoHotel || [];
+  let registo = getEstadoQuartoHotel(quartoId, data);
+  if(registo){
+    registo.estado = estado;
+    if(opcoes.camareiraId !== undefined) registo.camareiraId = opcoes.camareiraId;
+    if(opcoes.notas !== undefined) registo.notas = opcoes.notas;
+    if(opcoes.minibarOk !== undefined) registo.minibarOk = opcoes.minibarOk;
+    if(opcoes.minibarNotas !== undefined) registo.minibarNotas = opcoes.minibarNotas;
+    if(opcoes.inspecionadoPor !== undefined) registo.inspecionadoPor = opcoes.inspecionadoPor;
+    registo.atualizadoEm = new Date().toISOString();
+  } else {
+    registo = {
+      id: uidHotel(), quartoId, data, estado,
+      camareiraId: opcoes.camareiraId || '',
+      notas: opcoes.notas || '',
+      minibarOk: opcoes.minibarOk !== undefined ? opcoes.minibarOk : null,
+      minibarNotas: opcoes.minibarNotas || '',
+      inspecionadoPor: opcoes.inspecionadoPor || '',
+      atualizadoEm: new Date().toISOString()
+    };
+    DBHotel.estadosQuartoHotel.push(registo);
+  }
+  if(estado === 'limpo' || estado === 'aprovado'){
+    confirmarLimpezaHotel(quartoId, data);
+  }
+  saveDBHotel();
+  return registo;
+}
+
+/* Estado "em tempo real" de um quarto numa data: usa o registo explícito
+   de Housekeeping se existir; caso contrário, deduz de bloqueios de
+   manutenção ativos ou de limpeza pendente (checkin/checkout do dia
+   ainda não confirmado); por defeito, considera-se limpo. */
+function estadoTempoRealQuartoHotel(quartoId, data){
+  const registo = getEstadoQuartoHotel(quartoId, data);
+  if(registo) return registo.estado;
+  const bloqueioAtivo = (DBHotel.bloqueios||[]).find(b => b.quartoId === quartoId && data >= b.dataIni && data < b.dataFim);
+  if(bloqueioAtivo && bloqueioAtivo.tipo === 'manutencao') return 'manutencao';
+  const pendente = DBHotel.reservas.some(r =>
+    r.estado !== 'cancelada' &&
+    (r.checkinPrevisto === data || r.checkoutPrevisto === data) &&
+    !limpezaConfirmadaHotel(quartoId, data)
+  );
+  return pendente ? 'limpeza-pendente' : 'limpo';
+}
+
+/* Lista diária de limpeza: quartos com checkin/checkout hoje, quartos
+   atualmente ocupados (limpeza de rotina) e quartos já com um estado
+   registado nesta data (para não desaparecerem da lista depois de
+   alguém começar a trabalhar neles). */
+function listaLimpezaDiariaHotel(data){
+  const relevantes = new Map();
+  DBHotel.reservas.forEach(r => {
+    if(r.estado === 'cancelada') return;
+    if(r.checkinPrevisto === data || r.checkoutPrevisto === data){
+      relevantes.set(r.quartoId, true);
+    } else if((r.checkinReal||r.checkinPrevisto) <= data && r.checkoutPrevisto > data && r.estado !== 'checkout'){
+      relevantes.set(r.quartoId, true);
+    }
+  });
+  (DBHotel.estadosQuartoHotel||[]).filter(e => e.data === data).forEach(e => relevantes.set(e.quartoId, true));
+
+  return Array.from(relevantes.keys()).map(quartoId => {
+    const quarto = DBHotel.quartos.find(q => q.id === quartoId);
+    const registo = getEstadoQuartoHotel(quartoId, data);
+    const camareira = registo && registo.camareiraId ? (DBHotel.camareiras||[]).find(c => c.id === registo.camareiraId) : null;
+    return {
+      quartoId,
+      numero: quarto ? quarto.numero : quartoId,
+      estado: registo ? registo.estado : 'limpeza-pendente',
+      camareiraId: registo ? registo.camareiraId : '',
+      camareiraNome: camareira ? camareira.nome : '',
+      notas: registo ? registo.notas : '',
+      minibarOk: registo ? registo.minibarOk : null
+    };
+  }).sort((a,b) => String(a.numero).localeCompare(String(b.numero), undefined, {numeric:true}));
+}
+
+/* ---------- Camareiras ---------- */
+function adicionarCamareiraHotel(nome, contacto=''){
+  DBHotel.camareiras = DBHotel.camareiras || [];
+  const c = {id: uidHotel(), nome, contacto, ativo: true};
+  DBHotel.camareiras.push(c);
+  saveDBHotel();
+  return c;
+}
+
+function toggleCamareiraAtivaHotel(id){
+  const c = (DBHotel.camareiras||[]).find(x => x.id === id);
+  if(c){ c.ativo = !c.ativo; saveDBHotel(); }
+}
+
+function removerCamareiraHotel(id){
+  DBHotel.camareiras = (DBHotel.camareiras||[]).filter(c => c.id !== id);
+  saveDBHotel();
+}
+
+/* ---------- Objetos Perdidos e Achados ---------- */
+function registarObjetoPerdidoHotel({data, quartoId, descricao, encontradoPor='', notas=''}){
+  DBHotel.objetosPerdidos = DBHotel.objetosPerdidos || [];
+  const item = {
+    id: uidHotel(),
+    data: data || new Date().toISOString().slice(0,10),
+    quartoId: quartoId || '',
+    descricao, encontradoPor, notas,
+    estado: 'guardado', devolvidoA: '', devolvidoEm: '',
+    criadoEm: new Date().toISOString()
+  };
+  DBHotel.objetosPerdidos.push(item);
+  saveDBHotel();
+  return item;
+}
+
+function marcarObjetoDevolvidoHotel(id, devolvidoA){
+  const item = (DBHotel.objetosPerdidos||[]).find(o => o.id === id);
+  if(!item) return;
+  item.estado = 'devolvido';
+  item.devolvidoA = devolvidoA;
+  item.devolvidoEm = new Date().toISOString();
+  saveDBHotel();
 }
 
 function getLembretesOperacionaisHotel(){
