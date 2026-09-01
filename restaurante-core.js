@@ -251,6 +251,46 @@ async function saveDBRest(tentativas = 3){
 }
 
 /* ============================================================
+   LEITURA (SOMENTE LEITURA) DOS LANÇAMENTOS DO CHEFE DE CAIXA
+   NO TESOUCANTÁBIL (index.html)
+   ------------------------------------------------------------
+   O Restaurante não grava nada nesta tabela — só lê, para o Fecho
+   de Caixa do Restaurante mostrar os lançamentos que o(a) Chefe de
+   Caixa já declarou no Tesoucantábil (aba "📝 Fecho de Caixa" →
+   Lançamentos), para conferência. Mesma tabela/linha usada pelo
+   index-17-corrigido.html: supa.from('erp_data').select('data')
+   .eq('id','main'). Filtra por Unidade = UNIDADE_RESTO ("ZOOM'S
+   LODGE") e Categoria = "Receitas de Restauração" (o mesmo valor
+   que TIPOS_VENDA_ZOOMS_LODGE['Restauração'] produz no index) —
+   se essa categoria mudar de nome lá, atualizar aqui também.
+   ============================================================ */
+const CATEGORIA_RECEITA_RESTAURACAO_TESOUCANTABIL = TIPOS_VENDA_RESTAURANTE["Restauração"]; // "Receitas de Restauração"
+
+async function buscarLancamentosChefeCaixaRest(data){
+  if(!supaRest) return {ok:false, msg:'Sem ligação ao Supabase.', linhas:[]};
+  try{
+    const { data: linha, error } = await supaRest
+      .from('erp_data')
+      .select('data')
+      .eq('id', 'main')
+      .maybeSingle();
+    if(error) throw error;
+
+    const lancamentos = (linha && linha.data && Array.isArray(linha.data.lancamentos)) ? linha.data.lancamentos : [];
+    const linhas = lancamentos.filter(l =>
+      l.data === data &&
+      l.unidade === UNIDADE_RESTO &&
+      l.categoria === CATEGORIA_RECEITA_RESTAURACAO_TESOUCANTABIL
+    );
+    const total = arredRest(linhas.reduce((s, l) => s + (Number(l.valor) || 0), 0));
+    return {ok:true, linhas, total};
+  }catch(e){
+    console.warn('Erro ao buscar lançamentos do Chefe de Caixa (Tesoucantábil):', e);
+    return {ok:false, msg:'Não foi possível ler os lançamentos do Tesoucantábil — verifique a ligação.', linhas:[], total:0};
+  }
+}
+
+/* ============================================================
    LÓGICA DE MESAS
    ============================================================ */
 
@@ -437,20 +477,92 @@ function pagarComandaRest(comandaId, formaPagamento, conta, referencia=''){
 
 /* ============================================================
    INTEGRAÇÃO COM HOTEL (consumo no quarto)
+   ------------------------------------------------------------
+   Requer que hotel-core.js esteja incluído ANTES de
+   restaurante-core.js na página (ver restaurante-1.html) — se não
+   estiver, a integração é ignorada silenciosamente e o Restaurante
+   continua a funcionar de forma independente (mesmo padrão já
+   usado entre producao-core.js e logistica-core.js).
    ============================================================ */
 
-function lançarConsumoQuartoRest(hospedeId, quartoId, descricao, valor, categoria='Restauração'){
+/* Verifica se o módulo de Hotelaria está carregado na mesma página. */
+function hotelDisponivelRest(){
+  return typeof DBHotel !== 'undefined'
+    && typeof adicionarFolioHotel === 'function'
+    && typeof getStatusMapaQuartoHotel === 'function'
+    && typeof saveDBHotel === 'function';
+}
+
+/* Lista os quartos REAIS do Hotel que estão atualmente ocupados
+   (check-in feito, ainda sem check-out) — para preencher o
+   dropdown do "Consumo no Quarto" com quartos e hóspedes reais,
+   em vez de o utilizador escrever o número/ID à mão. */
+function listarQuartosOcupadosHotelRest(){
+  if(!hotelDisponivelRest()) return [];
+  const hoje = hojeISORest();
+  return DBHotel.quartos
+    .map(q => {
+      const st = getStatusMapaQuartoHotel(q.id, hoje);
+      if(st.status !== 'ocupado' || !st.reservaId) return null;
+      const reserva = DBHotel.reservas.find(r => r.id === st.reservaId);
+      if(!reserva) return null;
+      return {
+        quartoId: q.id,
+        numero: q.numero,
+        reservaId: reserva.id,
+        hospedeNome: reserva.hospedeNome || 'Hóspede'
+      };
+    })
+    .filter(Boolean)
+    .sort((a,b) => String(a.numero).localeCompare(String(b.numero), undefined, {numeric:true}));
+}
+
+/* Lança um consumo do Restaurante diretamente no folio do hóspede,
+   via adicionarFolioHotel (hotel-core.js) — mesmo mecanismo que o
+   check-out do Hotel já usa para somar a diária + extras. O consumo
+   entra como "por pagar" (pago:false), ou seja, fica no saldo em
+   aberto do hóspede e só é cobrado/lançado na Tesouraria no
+   check-out (evita duplicar o lançamento aqui no Restaurante).
+   Grava também uma cópia local em DBRest.consumosQuarto, só para
+   histórico/consulta dentro do próprio Restaurante. */
+async function lançarConsumoQuartoRest(reservaId, quartoId, descricao, valor, categoria='Restauração'){
   const consumo = {
     id: uidRest(),
-    hospedeId: hospedeId,
+    reservaId: reservaId,
     quartoId: quartoId,
     descricao: descricao,
     valor: valor,
     categoria: categoria,
     dataLancamento: new Date().toISOString(),
-    lancadoEm: null
+    lancadoEm: null,
+    espelhadoNoFolio: false
   };
+
+  if(hotelDisponivelRest() && reservaId){
+    try{
+      const itemFolio = adicionarFolioHotel(reservaId, {
+        tipo: 'consumo',
+        descricao: `[Restaurante] ${descricao}`,
+        tipoVenda: 'Restauração',
+        valor: Number(valor) || 0,
+        formaPagamento: '',
+        pago: false
+      });
+      const resultado = await saveDBHotel();
+      if(resultado && resultado.ok){
+        consumo.espelhadoNoFolio = true;
+        consumo.folioId = itemFolio.id;
+      } else {
+        toastRest('Consumo registado no Restaurante, mas não foi possível gravar no folio do Hotel — tente novamente.', 'danger');
+      }
+    }catch(e){
+      console.warn('Erro ao espelhar consumo no folio do Hotel:', e);
+      toastRest('Consumo registado no Restaurante, mas não foi possível espelhar no folio do Hotel.', 'danger');
+    }
+  }
+
   DBRest.consumosQuarto.push(consumo);
+  await saveDBRest();
   return consumo;
 }
 
