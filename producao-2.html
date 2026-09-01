@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Produção — Bakery Line</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="logistica-core.js"></script>
+<script src="producao-core.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
+  :root{
+    --verde-escuro:#14232B; --verde:#1F6F68; --verde-claro:#E4F0EE;
+    --castanho:#C89B3C; --creme:#FBF3E1; --bg:#F6F1E7; --card:#ffffff;
+    --texto:#14232B; --muted:#55666E; --borda:#DDD2B8; --vermelho:#A6472E;
+    --gold:#C89B3C; --azul:#3B82F6; --laranja:#B4700A;
+    --font-display:'Fraunces',Georgia,serif; --font-body:'Inter','Segoe UI',Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--font-body);background:var(--bg);color:var(--texto);}
+  #app{display:flex;min-height:100vh;}
+  nav{width:210px;background:var(--verde-escuro);color:#fff;flex-shrink:0;padding:20px 0;overflow-y:auto;}
+  nav h1{font-size:15px;padding:0 18px 16px;font-family:var(--font-display);font-weight:600;}
+  nav .item{padding:10px 18px;cursor:pointer;font-size:13.5px;opacity:.82;border-left:3px solid transparent;color:#fff;}
+  nav .item:hover{opacity:1;background:rgba(246,241,231,.07);}
+  nav .item.active{opacity:1;background:var(--verde);border-left:3px solid var(--gold);font-weight:600;}
+  main{flex:1;padding:24px 28px;overflow-y:auto;}
+  h2{background:var(--verde-escuro);color:#fff;font-family:var(--font-display);font-weight:600;
+     padding:12px 20px;margin:0 0 16px;border-radius:8px;font-size:17px;}
+  h3{color:var(--verde-escuro);font-size:14px;margin:16px 0 8px;font-weight:600;}
+  .card{background:var(--card);border:1px solid var(--borda);border-radius:10px;padding:16px 20px;margin-bottom:16px;}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:10px 0 3px;text-transform:uppercase;letter-spacing:.03em;}
+  input,select,textarea{width:100%;padding:9px 11px;border:1px solid var(--borda);border-radius:7px;font-size:14px;font-family:var(--font-body);background:#fff;}
+  textarea{min-height:60px;}
+  button{margin-top:16px;padding:11px 22px;background:var(--verde);color:#fff;border:none;
+         border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;}
+  button:hover{background:var(--verde-escuro);}
+  button.secondary{background:var(--muted);margin-left:8px;}
+  button.secondary:hover{background:var(--verde-escuro);}
+  button.danger{background:var(--vermelho);}
+  button.danger:hover{background:#8B3B2A;}
+  button.small{padding:7px 14px;font-size:12px;margin:4px 4px 4px 0;}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--borda);}
+  th{color:var(--muted);text-transform:uppercase;font-size:11.5px;letter-spacing:.03em;}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px;}
+  .cards .card{margin-bottom:0;text-align:center;}
+  .cards .card .num{font-family:var(--font-display);font-size:30px;font-weight:600;color:var(--verde-escuro);overflow-wrap:break-word;word-break:break-word;}
+  .cards .card .lbl{font-size:12px;color:var(--muted);margin-top:2px;}
+
+  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;}
+  .badge.planeada{background:#DBEAFE;color:#1E40AF;}
+  .badge.em_producao{background:#FEF3C7;color:#92400E;}
+  .badge.finalizada{background:#D1FAE5;color:#065F46;}
+  .badge.cancelada{background:#E5E7EB;color:var(--muted);}
+  .badge.pendente{background:#E5E7EB;color:var(--muted);}
+  .badge.aprovado{background:#D1FAE5;color:#065F46;}
+  .badge.reprovado{background:#F6E4E0;color:var(--vermelho);}
+  .badge.quarentena{background:#F3E8FF;color:#6B21A8;}
+  .badge.grave{background:#F6E4E0;color:var(--vermelho);}
+  .badge.aviso{background:#FEF3C7;color:#92400E;}
+
+  .alerta{background:#FEF3C7;padding:12px 16px;border-radius:8px;border-left:4px solid var(--gold);margin-bottom:12px;font-size:13px;color:#7A5A00;}
+  .alerta.grave{background:#F6E4E0;border-left-color:var(--vermelho);color:var(--vermelho);}
+  .info-box{background:var(--verde-claro);border-left:4px solid var(--verde);padding:12px 16px;border-radius:4px;margin:12px 0;font-size:13px;}
+  .ia-box{background:var(--creme);border-left:4px solid var(--castanho);padding:12px 16px;border-radius:4px;margin:10px 0;font-size:13.5px;line-height:1.6;}
+
+  .grid-inline{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .grid-inline.col3{grid-template-columns:1fr 1fr 1fr;}
+  .grid-inline.col4{grid-template-columns:1fr 1fr 1fr 1fr;}
+
+  .modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:1000;align-items:center;justify-content:center;}
+  .modal.ativo{display:flex;}
+  .modal-content{background:white;border-radius:12px;padding:28px;max-width:680px;width:92%;max-height:86vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,.2);}
+  .modal-content h3{margin-top:0;}
+  .modal-close{float:right;cursor:pointer;font-size:24px;color:var(--muted);}
+  .modal-close:hover{color:var(--texto);}
+
+  .voltar{position:fixed;top:14px;right:18px;background:var(--verde-escuro);color:#fff;
+          padding:8px 16px;border-radius:8px;text-decoration:none;font-size:13px;z-index:999;}
+
+  .ingr-row{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr auto;gap:8px;align-items:end;padding:6px 0;}
+  .ingr-row label{margin-top:0;}
+  .ingr-row .rm{background:var(--vermelho);padding:9px 12px;margin-top:0;}
+</style>
+</head>
+<body>
+<a class="voltar" href="index.html">← Voltar</a>
+<div id="app">
+  <nav>
+    <h1>🥖 Produção</h1>
+    <div class="item" data-view="dashboard" onclick="mudarViewProd('dashboard')">📊 Dashboard</div>
+    <div class="item" data-view="produtos" onclick="mudarViewProd('produtos')">🍞 Produtos</div>
+    <div class="item" data-view="fichas" onclick="mudarViewProd('fichas')">📋 Fichas Técnicas</div>
+    <div class="item" data-view="ordens" onclick="mudarViewProd('ordens')">📝 Ordens de Produção</div>
+    <div class="item" data-view="lotes" onclick="mudarViewProd('lotes')">🏷️ Lotes</div>
+    <div class="item" data-view="qualidade" onclick="mudarViewProd('qualidade')">🧪 Qualidade</div>
+    <div class="item" data-view="manutencao" onclick="mudarViewProd('manutencao')">🔧 Manutenção</div>
+    <div class="item" data-view="alertas" onclick="mudarViewProd('alertas')">⚠️ Alertas</div>
+    <div class="item" data-view="ia" onclick="mudarViewProd('ia')">🤖 IA Produção</div>
+  </nav>
+  <main id="main"></main>
+</div>
+
+<!-- Modal Ficha Técnica -->
+<div class="modal" id="modalFicha">
+  <div class="modal-content">
+    <span class="modal-close" onclick="fecharModalFichaProd()">&times;</span>
+    <h3>📋 Nova Ficha Técnica</h3>
+    <form id="formFicha">
+      <div class="grid-inline">
+        <div><label>Produto</label><select name="produtoId" id="selectProdutoFicha" required></select></div>
+        <div><label>Nome da Ficha</label><input name="nome" placeholder="ex.: Pão Francês — receita padrão" required></div>
+      </div>
+      <div class="grid-inline">
+        <div><label>Rendimento (quantas unidades esta receita produz)</label><input name="rendimento" type="number" step="0.01" required></div>
+        <div><label>Unidade do Rendimento</label><input name="unidadeRendimento" placeholder="ex.: Un, Kg" value="Un"></div>
+      </div>
+      <h3>Ingredientes</h3>
+      <p class="info-box">Indique a quantidade e o custo unitário de cada ingrediente para o rendimento acima — o sistema calcula o custo previsto por unidade automaticamente.</p>
+      <div id="ingredientesFichaContainer"></div>
+      <button type="button" class="secondary" onclick="adicionarLinhaIngredienteProd()">➕ Adicionar Ingrediente</button>
+      <label>Observações</label><textarea name="obs"></textarea>
+      <br>
+      <button type="submit">💾 Guardar Ficha Técnica</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal Finalizar OP -->
+<div class="modal" id="modalFinalizarOP">
+  <div class="modal-content">
+    <span class="modal-close" onclick="fecharModalFinalizarOPProd()">&times;</span>
+    <h3>✅ Finalizar Ordem de Produção — <span id="finalizarOPTitulo"></span></h3>
+    <form id="formFinalizarOP">
+      <input type="hidden" name="opId">
+      <div class="grid-inline col3">
+        <div><label>Quantidade Real Produzida</label><input name="quantidadeReal" type="number" step="0.01" required></div>
+        <div><label>Mão de Obra (Kz)</label><input name="maoDeObra" type="number" step="0.01" value="0"></div>
+        <div><label>Energia/Gás (Kz)</label><input name="energia" type="number" step="0.01" value="0"></div>
+      </div>
+      <label>Data de Conclusão</label><input name="dataConclusao" type="date">
+      <h3>Consumo Real de Matéria-Prima</h3>
+      <div id="consumosRealContainer"></div>
+      <label style="display:flex;align-items:center;gap:8px;text-transform:none;margin-top:14px;">
+        <input type="checkbox" name="gerarLote" id="chkGerarLote" checked style="width:auto;margin:0;" onchange="document.getElementById('camposLoteFinalizar').style.display=this.checked?'grid':'none'"> Gerar Lote automaticamente para este produto
+      </label>
+      <div class="grid-inline" id="camposLoteFinalizar">
+        <div><label>Código do Lote (opcional — gerado automaticamente se vazio)</label><input name="codigoLote"></div>
+        <div><label>Data de Validade</label><input name="dataValidade" type="date"></div>
+      </div>
+      <button type="submit">✅ Finalizar OP</button>
+      <button type="button" class="secondary" onclick="fecharModalFinalizarOPProd()">Cancelar</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal Equipamento -->
+<div class="modal" id="modalEquipamento">
+  <div class="modal-content">
+    <span class="modal-close" onclick="fecharModalEquipamentoProd()">&times;</span>
+    <h3>🔧 Novo Equipamento</h3>
+    <form id="formEquipamento">
+      <div class="grid-inline">
+        <div><label>Nome</label><input name="nome" placeholder="ex.: Forno Industrial 01" required></div>
+        <div><label>Tipo</label><input name="tipo" placeholder="ex.: Forno, Batedeira, Câmara de Fermentação"></div>
+      </div>
+      <div class="grid-inline col3">
+        <div><label>Intervalo Preventiva (Horas)</label><input name="intervaloHorasManutencao" type="number" placeholder="ex.: 500"></div>
+        <div><label>Intervalo Preventiva (Dias)</label><input name="intervaloDiasManutencao" type="number" placeholder="ex.: 90"></div>
+        <div><label>Horas de Uso Atuais</label><input name="horasUsoAtual" type="number" step="0.1"></div>
+      </div>
+      <label>Observações</label><textarea name="obs"></textarea>
+      <button type="submit">💾 Guardar Equipamento</button>
+      <button type="button" class="secondary" onclick="fecharModalEquipamentoProd()">Cancelar</button>
+    </form>
+  </div>
+</div>
+
+<script>
+let viewAtualProd = 'dashboard';
+let opDetalheProd = null;
+
+async function iniciarProd(){
+  await carregarDadosProducao();
+  // Carrega também a Logística (mesma ligação Supabase) para a integração
+  // automática de stock ao finalizar Ordens de Produção.
+  if(typeof carregarDadosLogistica === 'function'){
+    await carregarDadosLogistica();
+    await autoSeedArmazensLogistica();
+  }
+  const selProduto = document.getElementById('selectProdutoFicha');
+  if(selProduto) preencherSelectProdutosProd(selProduto);
+  renderProd();
+}
+
+function preencherSelectProdutosProd(sel){
+  sel.innerHTML = '<option value="">—</option>' + DBProducao.produtos.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
+}
+
+function mudarViewProd(v){
+  viewAtualProd = v;
+  renderProd();
+}
+
+function renderProd(){
+  document.querySelectorAll('nav .item').forEach(el=>{
+    el.classList.toggle('active', el.dataset.view === viewAtualProd);
+  });
+  const main = document.getElementById('main');
+  if(viewAtualProd === 'dashboard') main.innerHTML = viewDashboardProd();
+  else if(viewAtualProd === 'produtos') main.innerHTML = viewProdutosProd();
+  else if(viewAtualProd === 'fichas') main.innerHTML = viewFichasProd();
+  else if(viewAtualProd === 'ordens') main.innerHTML = viewOrdensProd();
+  else if(viewAtualProd === 'lotes') main.innerHTML = viewLotesProd();
+  else if(viewAtualProd === 'qualidade') main.innerHTML = viewQualidadeProd();
+  else if(viewAtualProd === 'manutencao') main.innerHTML = viewManutencaoProd();
+  else if(viewAtualProd === 'alertas') main.innerHTML = viewAlertasProd();
+  else if(viewAtualProd === 'ia') main.innerHTML = viewIAProd();
+  ligarEventosProd();
+}
+
+/* ============================================================ DASHBOARD */
+function viewDashboardProd(){
+  const alertas = alertasProducaoProd();
+  const opsAtivas = DBProducao.ordens.filter(o=>o.estado==='em_producao' || o.estado==='planeada').length;
+  const finalizadas = DBProducao.ordens.filter(o=>o.estado==='finalizada');
+  const eficiencias = finalizadas.map(eficienciaOPProd).filter(e=>e!=null);
+  const eficienciaMedia = eficiencias.length ? arredProd(eficiencias.reduce((s,e)=>s+e,0)/eficiencias.length,1) : null;
+
+  return `<h2>📊 Dashboard — Produção</h2>
+  <div class="cards">
+    <div class="card"><div class="num">${DBProducao.produtos.length}</div><div class="lbl">Produtos cadastrados</div></div>
+    <div class="card"><div class="num">${DBProducao.fichasTecnicas.length}</div><div class="lbl">Fichas Técnicas</div></div>
+    <div class="card"><div class="num">${opsAtivas}</div><div class="lbl">OPs planeadas/em produção</div></div>
+    <div class="card"><div class="num" style="color:${eficienciaMedia==null?'var(--muted)':(eficienciaMedia>=95?'var(--verde)':'var(--laranja)')}">${eficienciaMedia==null?'—':eficienciaMedia+'%'}</div><div class="lbl">Eficiência média (OPs finalizadas)</div></div>
+    <div class="card"><div class="num" style="color:${alertas.length?'var(--vermelho)':'var(--verde)'}">${alertas.length}</div><div class="lbl">Alertas ativos</div></div>
+  </div>
+  ${alertas.length ? `<div class="alerta grave">⚠️ Há ${alertas.length} alerta(s) por resolver — lotes a vencer, testes reprovados, manutenções previstas, OPs atrasadas ou stock baixo na Logística. Veja em <b>⚠️ Alertas</b>.</div>` : `<div class="info-box">✅ Sem alertas ativos no momento.</div>`}
+  <h3>Como este módulo funciona</h3>
+  <div class="info-box">Cada <b>Produto</b> tem uma ou mais <b>Fichas Técnicas</b> (receita + custo dos ingredientes). Ao abrir uma <b>Ordem de Produção</b> a partir de uma ficha, o sistema calcula automaticamente o consumo <i>previsto</i>. Ao finalizar a OP, regista-se o consumo <i>real</i>, a mão de obra e a energia — o sistema calcula custo real, eficiência e desvios, e pode gerar automaticamente um <b>Lote</b> para controlo de validade e qualidade.</div>
+  <div class="info-box">${logisticaDisponivelProd()
+    ? '🔗 <b>Integração com a Logística ativa</b> — ao finalizar uma OP, a matéria-prima é automaticamente dada como saída do <b>Armazém Central</b> e o produto acabado entra na <b>Área de Produção</b>, ligando-se aos mesmos produtos e armazéns usados no módulo 🚚 Logística.'
+    : '⚠️ O módulo de Logística não carregou nesta página — a integração de stock está desativada por agora.'}</div>`;
+}
+
+/* ============================================================ PRODUTOS */
+function viewProdutosProd(){
+  return `<h2>🍞 Produtos</h2>
+  <div class="card">
+    <form id="formProduto">
+      <div class="grid-inline col3">
+        <div><label>Nome do Produto</label><input name="nome" required placeholder="ex.: Pão Francês"></div>
+        <div><label>Categoria</label><input name="categoria" placeholder="ex.: Pão, Bolo, Doçaria"></div>
+        <div><label>Unidade</label><input name="unidadeMedida" placeholder="ex.: Un, Kg" value="Un"></div>
+      </div>
+      <button type="submit">✅ Adicionar Produto</button>
+    </form>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Produto</th><th>Categoria</th><th>Unidade</th><th>Fichas Técnicas</th></tr></thead>
+      <tbody>
+        ${DBProducao.produtos.length ? DBProducao.produtos.map(p=>`<tr>
+          <td><b>${p.nome}</b></td><td>${p.categoria||'—'}</td><td>${p.unidadeMedida||'—'}</td>
+          <td>${fichasDoProdutoProd(p.id).length}</td>
+        </tr>`).join('') : '<tr><td colspan="4">Sem produtos cadastrados ainda.</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* ============================================================ FICHAS TÉCNICAS */
+function viewFichasProd(){
+  return `<h2>📋 Fichas Técnicas</h2>
+  <button onclick="abrirModalFichaProd()">➕ Nova Ficha Técnica</button>
+  ${!DBProducao.produtos.length ? '<div class="info-box">Cadastre pelo menos um produto em 🍞 Produtos antes de criar uma ficha técnica.</div>' : ''}
+  ${DBProducao.fichasTecnicas.map(f=>{
+    const produto = getProdutoProd(f.produtoId);
+    const custo = custoFichaTecnicaProd(f);
+    return `<div class="card">
+      <h3 style="margin-top:0;">${f.nome} <span style="color:var(--muted);font-weight:400;">— ${produto?produto.nome:'produto removido'}</span></h3>
+      <p style="font-size:13px;color:var(--muted);">Rendimento: <b>${f.rendimento} ${f.unidadeRendimento||''}</b> · Custo total: <b>${custo.total} Kz</b> · Custo por ${f.unidadeRendimento||'unidade'}: <b>${custo.porUnidade} Kz</b></p>
+      <table>
+        <thead><tr><th>Ingrediente</th><th>Quantidade</th><th>Unid.</th><th>Custo Unit.</th><th>Custo Total</th></tr></thead>
+        <tbody>
+          ${f.ingredientes.map(i=>`<tr>
+            <td>${i.nome}</td><td>${i.quantidade}</td><td>${i.unidade||'—'}</td><td>${i.custoUnitario} Kz</td>
+            <td>${arredProd(i.quantidade*i.custoUnitario)} Kz</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      ${f.obs?`<p style="font-size:13px;color:var(--muted);margin-top:8px;">${f.obs}</p>`:''}
+    </div>`;
+  }).join('') || '<p class="info-box">Sem fichas técnicas cadastradas ainda.</p>'}`;
+}
+
+function abrirModalFichaProd(){
+  const sel = document.getElementById('selectProdutoFicha');
+  preencherSelectProdutosProd(sel);
+  document.getElementById('ingredientesFichaContainer').innerHTML = '';
+  adicionarLinhaIngredienteProd();
+  document.getElementById('modalFicha').classList.add('ativo');
+}
+function fecharModalFichaProd(){
+  document.getElementById('modalFicha').classList.remove('ativo');
+  document.getElementById('formFicha').reset();
+}
+function adicionarLinhaIngredienteProd(){
+  const cont = document.getElementById('ingredientesFichaContainer');
+  const row = document.createElement('div');
+  row.className = 'ingr-row';
+  row.innerHTML = `
+    <div><label>Ingrediente</label><input class="ingr-nome" placeholder="ex.: Farinha"></div>
+    <div><label>Quantidade</label><input class="ingr-qtd" type="number" step="0.001"></div>
+    <div><label>Unidade</label><input class="ingr-un" placeholder="Kg, g, Un"></div>
+    <div><label>Custo Unit. (Kz)</label><input class="ingr-custo" type="number" step="0.01"></div>
+    <button type="button" class="rm" onclick="this.parentElement.remove()">✕</button>`;
+  cont.appendChild(row);
+}
+function lerIngredientesFormProd(){
+  return [...document.querySelectorAll('#ingredientesFichaContainer .ingr-row')].map(row=>({
+    nome: row.querySelector('.ingr-nome').value.trim(),
+    quantidade: row.querySelector('.ingr-qtd').value,
+    unidade: row.querySelector('.ingr-un').value.trim(),
+    custoUnitario: row.querySelector('.ingr-custo').value
+  }));
+}
+
+/* ============================================================ ORDENS DE PRODUÇÃO */
+function viewOrdensProd(){
+  const opcoesFicha = DBProducao.fichasTecnicas.map(f=>{
+    const produto = getProdutoProd(f.produtoId);
+    return `<option value="${f.id}">${f.nome} (${produto?produto.nome:'—'})</option>`;
+  }).join('');
+
+  const detalhe = opDetalheProd ? getOPProd(opDetalheProd) : null;
+
+  return `<h2>📝 Ordens de Produção</h2>
+  <div class="card">
+    <h3 style="margin-top:0;">Nova Ordem de Produção</h3>
+    ${!DBProducao.fichasTecnicas.length ? '<div class="info-box">Crie primeiro uma Ficha Técnica em 📋 Fichas Técnicas.</div>' : `
+    <form id="formOP">
+      <div class="grid-inline col3">
+        <div><label>Ficha Técnica</label><select name="fichaTecnicaId" id="selectFichaOP" required onchange="atualizarPreviewConsumoOPProd()"><option value="">—</option>${opcoesFicha}</select></div>
+        <div><label>Quantidade Prevista</label><input name="quantidadePrevista" id="inputQtdPrevistaOP" type="number" step="0.01" required oninput="atualizarPreviewConsumoOPProd()"></div>
+        <div><label>Unidade de Negócio Destino</label><select name="unidadeNegocio"><option value="">—</option>${UNIDADES_NEGOCIO_PROD.map(u=>`<option>${u}</option>`).join('')}</select></div>
+      </div>
+      <div class="grid-inline col3">
+        <div><label>Data Início</label><input name="dataInicio" type="date" value="${hojeISOProd()}" required></div>
+        <div><label>Data Prevista de Conclusão</label><input name="dataPrevista" type="date"></div>
+        <div><label>Responsável</label><input name="responsavel"></div>
+      </div>
+      <label>Observações</label><textarea name="obs"></textarea>
+      <div id="previewConsumoOP"></div>
+      <button type="submit">✅ Criar Ordem de Produção</button>
+    </form>`}
+  </div>
+
+  <h3>Ordens Registadas</h3>
+  <div class="card">
+    <table>
+      <thead><tr><th>OP</th><th>Produto</th><th>Prev.</th><th>Real</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        ${[...DBProducao.ordens].reverse().map(op=>{
+          const produto = getProdutoProd(op.produtoId);
+          return `<tr>
+            <td>${op.numero}</td><td>${produto?produto.nome:'—'}</td>
+            <td>${op.quantidadePrevista}</td><td>${op.quantidadeReal ?? '—'}</td>
+            <td><span class="badge ${op.estado}">${ESTADOS_OP_LABEL_PROD[op.estado]}</span></td>
+            <td>
+              <button class="small" onclick="opDetalheProd='${op.id}';mudarViewProd('ordens')">Ver</button>
+              ${op.estado==='planeada' ? `<button class="small" onclick="acaoIniciarOPProd('${op.id}')">Iniciar</button>` : ''}
+              ${op.estado==='em_producao' ? `<button class="small" onclick="abrirModalFinalizarOPProd('${op.id}')">Finalizar</button>` : ''}
+              ${(op.estado==='planeada'||op.estado==='em_producao') ? `<button class="small danger" onclick="acaoCancelarOPProd('${op.id}')">Cancelar</button>` : ''}
+            </td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="6">Sem Ordens de Produção registadas ainda.</td></tr>'}
+      </tbody>
+    </table>
+  </div>
+
+  ${detalhe ? viewDetalheOPProd(detalhe) : ''}`;
+}
+
+function viewDetalheOPProd(op){
+  const produto = getProdutoProd(op.produtoId);
+  const custoPrevisto = custoPrevistoOPProd(op);
+  const custoReal = custoRealOPProd(op);
+  const eficiencia = eficienciaOPProd(op);
+  const desvios = desviosConsumoOPProd(op);
+  const lote = op.loteId ? getLoteProd(op.loteId) : null;
+
+  return `<h3>Detalhe da OP ${op.numero} — ${produto?produto.nome:'—'}</h3>
+  <div class="card">
+    <p style="font-size:13px;color:var(--muted);">Estado: <span class="badge ${op.estado}">${ESTADOS_OP_LABEL_PROD[op.estado]}</span>
+      ${op.unidadeNegocio?` · Destino: <b>${op.unidadeNegocio}</b>`:''}
+      ${op.responsavel?` · Responsável: <b>${op.responsavel}</b>`:''}
+      ${lote?` · Lote: <b>${lote.codigo}</b> (<span class="badge ${lote.estado}">${ESTADOS_LOTE_LABEL_PROD[lote.estado]}</span>)`:''}
+    </p>
+
+    <div class="cards">
+      <div class="card"><div class="num">${op.quantidadeReal ?? '—'}</div><div class="lbl">Quantidade Real (prevista: ${op.quantidadePrevista})</div></div>
+      <div class="card"><div class="num" style="color:${eficiencia==null?'var(--muted)':(eficiencia>=95?'var(--verde)':'var(--laranja)')}">${eficiencia==null?'—':eficiencia+'%'}</div><div class="lbl">Eficiência</div></div>
+      <div class="card"><div class="num">${custoPrevisto} Kz</div><div class="lbl">Custo Previsto (matéria-prima)</div></div>
+      <div class="card"><div class="num">${custoReal.total} Kz</div><div class="lbl">Custo Real Total</div></div>
+    </div>
+
+    ${op.estado==='finalizada' ? `<h3>💰 Detalhe do Custo Real</h3>
+    <table>
+      <thead><tr><th>Matéria-Prima</th><th>Mão de Obra</th><th>Energia/Gás</th><th>Total</th></tr></thead>
+      <tbody><tr><td>${custoReal.materiaPrima} Kz</td><td>${custoReal.maoDeObra} Kz</td><td>${custoReal.energia} Kz</td><td><b>${custoReal.total} Kz</b></td></tr></tbody>
+    </table>` : ''}
+
+    <h3>⚖️ Consumo Previsto vs Real</h3>
+    <table>
+      <thead><tr><th>Ingrediente</th><th>Previsto</th><th>Real</th><th>Desvio</th></tr></thead>
+      <tbody>
+        ${desvios.map(c=>`<tr>
+          <td>${c.nome}</td><td>${c.previsto} ${c.unidade||''}</td><td>${c.real ?? '—'} ${c.unidade||''}</td>
+          <td>${c.desvioPct==null?'—':`<span class="${Math.abs(c.desvioPct)<=2?'':''}" style="color:${c.desvioPct>2?'var(--vermelho)':(c.desvioPct<-2?'var(--verde)':'var(--muted)')};font-weight:600;">${c.desvioPct>0?'+':''}${c.desvioPct}%</span>`}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* Mostra, em tempo real, o consumo previsto de cada ingrediente face
+   ao stock atualmente disponível no Armazém Central da Logística,
+   antes de a OP ser criada — para o operador saber se há matéria-prima
+   suficiente. */
+function atualizarPreviewConsumoOPProd(){
+  const selFicha = document.getElementById('selectFichaOP');
+  const inputQtd = document.getElementById('inputQtdPrevistaOP');
+  const cont = document.getElementById('previewConsumoOP');
+  if(!selFicha || !inputQtd || !cont) return;
+  const ficha = getFichaTecnicaProd(selFicha.value);
+  const qtd = Number(inputQtd.value);
+  if(!ficha || !qtd){ cont.innerHTML = ''; return; }
+
+  const fator = qtd / (Number(ficha.rendimento) || 1);
+  const semLogistica = !logisticaDisponivelProd();
+  cont.innerHTML = `<h3>⚖️ Consumo Previsto vs Stock no Armazém Central</h3>
+  ${semLogistica ? '<div class="info-box">Módulo de Logística não carregado — sem visibilidade de stock.</div>' : ''}
+  <table>
+    <thead><tr><th>Ingrediente</th><th>Necessário</th><th>Stock no Central</th><th></th></tr></thead>
+    <tbody>
+      ${ficha.ingredientes.map(i=>{
+        const necessario = arredProd(i.quantidade * fator, 3);
+        const stock = stockArmazemLogPorNomeProd(ARMAZEM_CENTRAL_LOG_ID_PROD, i.nome);
+        const falta = stock != null && stock < necessario;
+        return `<tr ${falta?'style="background:#F6E4E0;"':''}>
+          <td>${i.nome}</td><td>${necessario} ${i.unidade||''}</td>
+          <td>${stock==null ? '— (sem registo na Logística)' : stock+' '+(i.unidade||'')}</td>
+          <td>${falta?'⚠️ Insuficiente':''}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+async function acaoIniciarOPProd(opId){
+  const r = await iniciarOrdemProducaoProd(opId);
+  if(r.ok){ toastProd('✅ OP iniciada.'); renderProd(); } else { alert(r.msg); }
+}
+async function acaoCancelarOPProd(opId){
+  if(!confirm('Cancelar esta Ordem de Produção?')) return;
+  const r = await cancelarOrdemProducaoProd(opId);
+  if(r.ok){ toastProd('OP cancelada.'); renderProd(); } else { alert(r.msg); }
+}
+
+function abrirModalFinalizarOPProd(opId){
+  const op = getOPProd(opId);
+  if(!op) return;
+  document.getElementById('finalizarOPTitulo').textContent = `${op.numero} — ${(getProdutoProd(op.produtoId)||{}).nome||''}`;
+  document.getElementById('formFinalizarOP').opId.value = opId;
+  document.getElementById('formFinalizarOP').quantidadeReal.value = op.quantidadePrevista;
+  document.getElementById('formFinalizarOP').dataConclusao.value = hojeISOProd();
+
+  const cont = document.getElementById('consumosRealContainer');
+  cont.innerHTML = op.consumos.map(c=>{
+    const stock = stockArmazemLogPorNomeProd(ARMAZEM_CENTRAL_LOG_ID_PROD, c.nome);
+    return `
+    <div class="grid-inline">
+      <div><label>${c.nome} — previsto: ${c.previsto} ${c.unidade||''}${stock!=null?` · stock no Central: ${stock} ${c.unidade||''}`:''}</label>
+        <input type="number" step="0.001" class="consumo-real-input" data-ingrediente="${c.ingredienteId}" value="${c.previsto}"></div>
+    </div>`;
+  }).join('');
+  cont.insertAdjacentHTML('beforeend', logisticaDisponivelProd()
+    ? '<div class="info-box">🔗 Ao finalizar, esta quantidade real será dada como saída automática do Armazém Central e o produto acabado dará entrada na Área de Produção.</div>'
+    : '<div class="alerta">⚠️ Módulo de Logística não carregado — o stock não será atualizado automaticamente.</div>');
+
+  document.getElementById('modalFinalizarOP').classList.add('ativo');
+}
+function fecharModalFinalizarOPProd(){
+  document.getElementById('modalFinalizarOP').classList.remove('ativo');
+  document.getElementById('formFinalizarOP').reset();
+}
+
+/* ============================================================ LOTES */
+function viewLotesProd(){
+  return `<h2>🏷️ Lotes</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>Código</th><th>Produto</th><th>Produção</th><th>Validade</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        ${[...DBProducao.lotes].reverse().map(l=>{
+          const produto = getProdutoProd(l.produtoId);
+          const diasVal = l.dataValidade ? diasEntreProd(hojeISOProd(), l.dataValidade) : null;
+          return `<tr ${diasVal!=null && diasVal<=DIAS_ALERTA_VALIDADE_LOTE_PROD ? 'style="background:#FEF3C7;"' : ''}>
+            <td><b>${l.codigo}</b></td><td>${produto?produto.nome:'—'}</td>
+            <td>${l.dataProducao}</td><td>${l.dataValidade||'—'}${diasVal!=null && diasVal<0?' ⚠️ vencido':''}</td>
+            <td><span class="badge ${l.estado}">${ESTADOS_LOTE_LABEL_PROD[l.estado]}</span></td>
+            <td>
+              <button class="small" onclick="mudarViewProd('qualidade');setTimeout(()=>{document.getElementById('selectLoteTeste').value='${l.id}';},0)">🧪 Testar</button>
+              ${l.estado!=='aprovado'?`<button class="small" onclick="acaoAlterarLoteProd('${l.id}','aprovado')">Aprovar</button>`:''}
+              ${l.estado!=='reprovado'?`<button class="small danger" onclick="acaoAlterarLoteProd('${l.id}','reprovado')">Reprovar</button>`:''}
+            </td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="6">Sem lotes registados ainda — são gerados ao finalizar uma Ordem de Produção.</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+async function acaoAlterarLoteProd(loteId, estado){
+  const r = await alterarEstadoLoteProd(loteId, estado);
+  if(r.ok){ toastProd('Estado do lote atualizado.'); renderProd(); } else { alert(r.msg); }
+}
+
+/* ============================================================ QUALIDADE */
+function viewQualidadeProd(){
+  const opcoesLote = DBProducao.lotes.map(l=>{
+    const produto = getProdutoProd(l.produtoId);
+    return `<option value="${l.id}">${l.codigo} — ${produto?produto.nome:'—'}</option>`;
+  }).join('');
+
+  return `<h2>🧪 Controlo de Qualidade</h2>
+  <div class="card">
+    ${!DBProducao.lotes.length ? '<div class="info-box">Ainda não há lotes para testar — finalize uma Ordem de Produção com "Gerar Lote" ativo.</div>' : `
+    <form id="formTeste">
+      <div class="grid-inline col3">
+        <div><label>Lote</label><select name="loteId" id="selectLoteTeste" required><option value="">—</option>${opcoesLote}</select></div>
+        <div><label>Tipo de Teste</label>
+          <select name="tipo" required>${TIPOS_TESTE_QUALIDADE_PROD.map(t=>`<option>${t}</option>`).join('')}<option value="Outro">Outro</option></select>
+        </div>
+        <div><label>Resultado</label><select name="resultado" required><option value="aprovado">✅ Aprovado</option><option value="reprovado">❌ Reprovado</option></select></div>
+      </div>
+      <label>Observações</label><textarea name="obs"></textarea>
+      <button type="submit">✅ Registar Teste</button>
+    </form>`}
+  </div>
+
+  <h3>Histórico de Testes por Lote</h3>
+  ${DBProducao.lotes.map(l=>{
+    const testes = testesDoLoteProd(l.id);
+    if(!testes.length) return '';
+    return `<div class="card">
+      <h3 style="margin-top:0;">${l.codigo} <span class="badge ${l.estado}">${ESTADOS_LOTE_LABEL_PROD[l.estado]}</span></h3>
+      <table>
+        <thead><tr><th>Data</th><th>Tipo</th><th>Resultado</th><th>Observações</th></tr></thead>
+        <tbody>${testes.map(t=>`<tr><td>${t.data}</td><td>${t.tipo}</td><td><span class="badge ${t.resultado}">${t.resultado==='aprovado'?'✅ Aprovado':'❌ Reprovado'}</span></td><td>${t.obs||'—'}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }).join('') || '<p class="info-box">Sem testes registados ainda.</p>'}`;
+}
+
+/* ============================================================ MANUTENÇÃO */
+function viewManutencaoProd(){
+  const opcoesEquip = DBProducao.equipamentos.map(e=>`<option value="${e.id}">${e.nome}</option>`).join('');
+  return `<h2>🔧 Manutenção de Equipamentos</h2>
+  <button onclick="abrirModalEquipamentoProd()">➕ Novo Equipamento</button>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Registar Intervenção</h3>
+    ${!DBProducao.equipamentos.length ? '<div class="info-box">Cadastre primeiro um equipamento.</div>' : `
+    <form id="formManutencao">
+      <div class="grid-inline col3">
+        <div><label>Equipamento</label><select name="equipamentoId" required><option value="">—</option>${opcoesEquip}</select></div>
+        <div><label>Data</label><input name="data" type="date" value="${hojeISOProd()}" required></div>
+        <div><label>Tipo de Intervenção</label><select name="tipoIntervencao" required>${TIPOS_INTERVENCAO_MANUT_PROD.map(t=>`<option>${t}</option>`).join('')}</select></div>
+      </div>
+      <div class="grid-inline col3">
+        <div><label>Horas de Uso no Momento</label><input name="horasNoMomento" type="number" step="0.1"></div>
+        <div><label>Custo (Kz)</label><input name="custo" type="number" step="0.01"></div>
+      </div>
+      <label>Descrição</label><textarea name="descricao"></textarea>
+      <label>Observações</label><textarea name="obs"></textarea>
+      <div class="info-box">Para <b>Manutenção Preventiva</b>, o sistema calcula automaticamente a previsão da próxima (por horas de uso e por data).</div>
+      <button type="submit">✅ Registar Manutenção</button>
+    </form>`}
+  </div>
+
+  <h3>Histórico e Previsões</h3>
+  ${DBProducao.equipamentos.map(e=>{
+    const hist = manutencoesDoEquipamentoProd(e.id);
+    const prev = previsaoProximaPreventivaEquipProd(e.id);
+    return `<div class="card">
+      <h3 style="margin-top:0;">${e.nome} <span style="color:var(--muted);font-weight:400;">(${e.horasUsoAtual!=null?e.horasUsoAtual+' h de uso':'sem registo de horas'})</span></h3>
+      ${prev ? `<div class="alerta ${prev.vencida?'grave':''}">${prev.vencida?'⚠️ Manutenção preventiva vencida!':'🗓️ Próxima preventiva prevista:'} ${prev.previsaoHoras!=null?`às <b>${prev.previsaoHoras} h</b> ou `:''}em <b>${prev.previsaoData}</b>.</div>` : '<p class="info-box">Ainda sem manutenção preventiva registada para calcular previsão.</p>'}
+      <table>
+        <thead><tr><th>Data</th><th>Tipo</th><th>Horas</th><th>Descrição</th><th>Custo</th></tr></thead>
+        <tbody>${hist.length ? hist.map(m=>`<tr><td>${m.data}</td><td>${m.tipoIntervencao}</td><td>${m.horasNoMomento??'—'}</td><td>${m.descricao||'—'}</td><td>${m.custo?m.custo+' Kz':'—'}</td></tr>`).join('') : '<tr><td colspan="5">Sem manutenções registadas.</td></tr>'}</tbody>
+      </table>
+    </div>`;
+  }).join('') || '<p class="info-box">Cadastre equipamentos primeiro.</p>'}`;
+}
+function abrirModalEquipamentoProd(){ document.getElementById('modalEquipamento').classList.add('ativo'); }
+function fecharModalEquipamentoProd(){
+  document.getElementById('modalEquipamento').classList.remove('ativo');
+  document.getElementById('formEquipamento').reset();
+}
+
+/* ============================================================ ALERTAS */
+function viewAlertasProd(){
+  const alertas = alertasProducaoProd();
+  return `<h2>⚠️ Alertas</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>Tipo</th><th>Detalhe</th><th>Gravidade</th></tr></thead>
+      <tbody>
+        ${alertas.length ? alertas.map(a=>`<tr>
+          <td>${a.tipo==='lote'?'🏷️ Lote':a.tipo==='qualidade'?'🧪 Qualidade':a.tipo==='manutencao'?'🔧 Manutenção':a.tipo==='stock_logistica'?'📦 Stock (Logística)':'📝 OP Atrasada'}</td>
+          <td>${a.texto}</td>
+          <td><span class="badge ${a.gravidade}">${a.gravidade==='grave'?'Grave':'Aviso'}</span></td>
+        </tr>`).join('') : '<tr><td colspan="3">✅ Sem alertas ativos.</td></tr>'}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+/* ============================================================ IA PRODUÇÃO */
+function viewIAProd(){
+  const sugestoes = sugestoesIAProd();
+  return `<h2>🤖 IA Produção</h2>
+  <div class="info-box">Análise automática a partir das Ordens de Produção finalizadas — sem ligação a serviços externos, apenas os dados já registados neste módulo.</div>
+  ${sugestoes.map(s=>`<div class="ia-box">💡 ${s}</div>`).join('')}`;
+}
+
+/* ============================================================ EVENTOS / SUBMISSÕES */
+function ligarEventosProd(){
+  const fProduto = document.getElementById('formProduto');
+  if(fProduto) fProduto.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(fProduto));
+    const r = await criarProdutoProd(fd);
+    if(r.ok){ toastProd('✅ Produto adicionado.'); renderProd(); } else { alert(r.msg); }
+  });
+
+  const fFicha = document.getElementById('formFicha');
+  if(fFicha) fFicha.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(fFicha));
+    fd.ingredientes = lerIngredientesFormProd();
+    const r = await criarFichaTecnicaProd(fd);
+    if(r.ok){ toastProd('✅ Ficha técnica guardada.'); fecharModalFichaProd(); renderProd(); } else { alert(r.msg); }
+  });
+
+  const fOP = document.getElementById('formOP');
+  if(fOP) fOP.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(fOP));
+    const r = await criarOrdemProducaoProd(fd);
+    if(r.ok){ toastProd('✅ Ordem de Produção criada.'); opDetalheProd = r.id; renderProd(); } else { alert(r.msg); }
+  });
+
+  const fFinalizarOP = document.getElementById('formFinalizarOP');
+  if(fFinalizarOP) fFinalizarOP.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(fFinalizarOP));
+    fd.gerarLote = fFinalizarOP.gerarLote.checked;
+    fd.consumosReais = {};
+    document.querySelectorAll('.consumo-real-input').forEach(inp=>{
+      fd.consumosReais[inp.dataset.ingrediente] = inp.value;
+    });
+    const r = await finalizarOrdemProducaoProd(fd.opId, fd);
+    if(r.ok){
+      toastProd('✅ Ordem de Produção finalizada.');
+      if(r.integracaoLogistica && r.integracaoLogistica.avisos.length){
+        alert('OP finalizada, mas há avisos da integração com a Logística:\n\n' + r.integracaoLogistica.avisos.join('\n'));
+      }
+      fecharModalFinalizarOPProd(); opDetalheProd = fd.opId; renderProd();
+    } else { alert(r.msg); }
+  });
+
+  const fEquip = document.getElementById('formEquipamento');
+  if(fEquip) fEquip.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(fEquip));
+    const r = await criarEquipamentoProd(fd);
+    if(r.ok){ toastProd('✅ Equipamento guardado.'); fecharModalEquipamentoProd(); renderProd(); } else { alert(r.msg); }
+  });
+
+  const fTeste = document.getElementById('formTeste');
+  if(fTeste) fTeste.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(fTeste));
+    const r = await registarTesteQualidadeProd(fd);
+    if(r.ok){ toastProd('✅ Teste registado.'); renderProd(); } else { alert(r.msg); }
+  });
+}
+
+iniciarProd();
+</script>
+</body>
+</html>
