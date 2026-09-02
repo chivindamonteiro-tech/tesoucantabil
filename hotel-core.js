@@ -1546,7 +1546,7 @@ function relatorioADRRevPARHotel(dataIni, dataFim){
   const dias = listarDatasEntre(dataIni, dataFim).length || 1;
 
   const reservasNoPeriodo = DBHotel.reservas.filter(r =>
-    r.estado !== 'cancelada' &&
+    r.estado !== 'cancelada' && r.estado !== 'waitlist' &&
     !(r.checkoutPrevisto <= dataIni || r.checkinPrevisto >= dataFim)
   );
 
