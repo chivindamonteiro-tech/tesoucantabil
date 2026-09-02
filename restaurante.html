@@ -1,0 +1,1772 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RESTAURANTE & BAR — Zoom's Lodge</title>
+  
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <!-- Módulo Hotelaria (para o Consumo no Quarto ler os quartos reais e
+       lançar direto no folio do hóspede) — tem de vir ANTES do
+       restaurante-core.js, tal como logistica-core.js vem antes do
+       producao-core.js. Se este ficheiro faltar, a integração é
+       ignorada e o Restaurante continua a funcionar sozinho. -->
+  <script src="hotel-core.js"></script>
+  
+  <!-- Módulo Restaurante -->
+  <script src="restaurante-core.js"></script>
+  
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      color: #333;
+      min-height: 100vh;
+    }
+    
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    header {
+      background: rgba(255, 255, 255, 0.98);
+      padding: 20px;
+      border-radius: 10px;
+      margin-bottom: 30px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    header h1 {
+      font-size: 28px;
+      color: #1e3c72;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .header-info {
+      display: flex;
+      gap: 20px;
+      font-size: 14px;
+    }
+    
+    .info-box {
+      background: #f0f4f8;
+      padding: 10px 15px;
+      border-radius: 6px;
+      border-left: 4px solid #2a5298;
+    }
+    
+    .nav-tabs {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    
+    .nav-tabs button {
+      padding: 12px 20px;
+      border: none;
+      background: rgba(255, 255, 255, 0.7);
+      color: #333;
+      border-radius: 6px 6px 0 0;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.3s;
+      font-size: 14px;
+    }
+    
+    .nav-tabs button:hover {
+      background: rgba(255, 255, 255, 0.9);
+    }
+    
+    .nav-tabs button.active {
+      background: white;
+      color: #2a5298;
+      border-bottom: 3px solid #2a5298;
+    }
+    
+    .tab-content {
+      display: none;
+      background: white;
+      padding: 30px;
+      border-radius: 0 10px 10px 10px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+      animation: fadeIn 0.3s ease-in;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    /* Mapa de Mesas */
+    .mesas-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+    
+    .mesa-card {
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      border: 2px solid #e0e0e0;
+      background: #f9f9f9;
+      min-height: 120px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      font-size: 14px;
+    }
+    
+    .mesa-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
+    }
+    
+    .mesa-card.livre {
+      background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+      border-color: #66bb6a;
+    }
+    
+    .mesa-card.ocupada {
+      background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+      border-color: #ef5350;
+    }
+    
+    .mesa-card.reservada {
+      background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+      border-color: #ffa726;
+    }
+    
+    .mesa-card.manutencao {
+      background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+      border-color: #ab47bc;
+    }
+    
+    .mesa-numero {
+      font-size: 24px;
+      font-weight: bold;
+      color: #1e3c72;
+      margin: 5px 0;
+    }
+    
+    .mesa-status {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+    }
+    
+    /* Formulários */
+    .form-group {
+      margin-bottom: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    
+    label {
+      font-weight: 600;
+      color: #333;
+      font-size: 14px;
+    }
+    
+    input, select, textarea {
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      transition: border-color 0.3s;
+    }
+    
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #2a5298;
+      box-shadow: 0 0 0 3px rgba(42, 82, 152, 0.1);
+    }
+    
+    button {
+      padding: 10px 18px;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      font-size: 14px;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 15px rgba(42, 82, 152, 0.4);
+    }
+    
+    .btn-secondary {
+      background: #f0f0f0;
+      color: #333;
+    }
+    
+    .btn-secondary:hover {
+      background: #e0e0e0;
+    }
+    
+    .btn-success {
+      background: #4caf50;
+      color: white;
+    }
+    
+    .btn-success:hover {
+      background: #45a049;
+    }
+    
+    .btn-danger {
+      background: #f44336;
+      color: white;
+    }
+    
+    .btn-danger:hover {
+      background: #da190b;
+    }
+    
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+    
+    /* Tabelas */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+    
+    table thead {
+      background: #f5f5f5;
+      border-bottom: 2px solid #ddd;
+    }
+    
+    table th {
+      padding: 12px;
+      text-align: left;
+      font-weight: 600;
+      color: #333;
+      font-size: 13px;
+    }
+    
+    table td {
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+      font-size: 13px;
+    }
+    
+    table tbody tr:hover {
+      background: #f9f9f9;
+    }
+    
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    
+    .badge-success { background: #c8e6c9; color: #2e7d32; }
+    .badge-warning { background: #ffe0b2; color: #e65100; }
+    .badge-danger { background: #ffcdd2; color: #c62828; }
+    .badge-info { background: #b3e5fc; color: #01579b; }
+    
+    /* Cards Produtos */
+    .produtos-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+    
+    .produto-card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      overflow: hidden;
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+    
+    .produto-card:hover {
+      box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
+      transform: translateY(-5px);
+    }
+    
+    .produto-imagem {
+      width: 100%;
+      height: 150px;
+      background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+    }
+    
+    .produto-info {
+      padding: 12px;
+    }
+    
+    .produto-nome {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 5px;
+      font-size: 14px;
+    }
+    
+    .produto-descricao {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+    
+    .produto-preco {
+      font-size: 16px;
+      font-weight: bold;
+      color: #2a5298;
+    }
+    
+    /* Comanda Visual */
+    .comanda-visual {
+      background: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .comanda-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #eee;
+      align-items: center;
+    }
+    
+    .comanda-item:last-child {
+      border-bottom: none;
+    }
+    
+    .item-nome {
+      flex: 1;
+    }
+    
+    .item-qty {
+      width: 60px;
+      text-align: center;
+    }
+    
+    .item-valor {
+      width: 100px;
+      text-align: right;
+      font-weight: 600;
+    }
+    
+    .comanda-total {
+      display: flex;
+      justify-content: space-between;
+      padding: 15px 0;
+      border-top: 2px solid #333;
+      font-size: 16px;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+    
+    /* Relatórios */
+    .relatorio-box {
+      background: #f5f5f5;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border-left: 4px solid #2a5298;
+    }
+    
+    .relatorio-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #e0e0e0;
+      font-size: 14px;
+    }
+    
+    .relatorio-item:last-child {
+      border-bottom: none;
+    }
+    
+    .relatorio-valor {
+      font-weight: 600;
+      color: #2a5298;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+    
+    .stat-card {
+      background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    
+    .stat-valor {
+      font-size: 32px;
+      font-weight: bold;
+      color: #2a5298;
+      margin: 10px 0;
+    }
+    
+    .stat-label {
+      font-size: 14px;
+      color: #666;
+    }
+    
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+    
+    .modal.active {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .modal-content {
+      background-color: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+      max-width: 500px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    
+    .modal-header {
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .modal-close {
+      cursor: pointer;
+      font-size: 24px;
+      color: #999;
+      background: none;
+      border: none;
+      padding: 0;
+    }
+    
+    .modal-close:hover {
+      color: #333;
+    }
+    
+    .divider {
+      border-top: 2px solid #eee;
+      margin: 20px 0;
+    }
+    
+    .alert {
+      padding: 15px;
+      border-radius: 6px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+    
+    .alert-info {
+      background: #b3e5fc;
+      color: #01579b;
+      border-left: 4px solid #0288d1;
+    }
+    
+    .alert-success {
+      background: #c8e6c9;
+      color: #2e7d32;
+      border-left: 4px solid #43a047;
+    }
+    
+    .alert-danger {
+      background: #ffcdd2;
+      color: #c62828;
+      border-left: 4px solid #e53935;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- HEADER -->
+    <header>
+      <h1>🍽️ RESTAURANTE & BAR — POS</h1>
+      <div class="header-info">
+        <div class="info-box">
+          <strong>Data:</strong> <span id="dataAtual">—</span>
+        </div>
+        <div class="info-box">
+          <strong>Mesas Livres:</strong> <span id="mesasLivres">—</span>
+        </div>
+        <div class="info-box">
+          <strong>Ocupação:</strong> <span id="ocupacao">—</span>
+        </div>
+        <div class="info-box">
+          <strong>Receita Hoje:</strong> <span id="receitaHoje">—</span>
+        </div>
+      </div>
+    </header>
+    <div id="agenteRestauranteBox"></div>
+
+    <!-- NAVEGAÇÃO -->
+    <div class="nav-tabs">
+      <button class="tab-btn active" data-tab="mesas">📍 Gestão de Mesas</button>
+      <button class="tab-btn" data-tab="cardapio">📋 Cardápio Digital</button>
+      <button class="tab-btn" data-tab="pedidos">📝 Pedidos & Comandas</button>
+      <button class="tab-btn" data-tab="hotel">🏨 Consumo no Quarto</button>
+      <button class="tab-btn" data-tab="reservas">📅 Reservas de Mesa</button>
+      <button class="tab-btn" data-tab="caixa">💰 Fecho de Caixa</button>
+      <button class="tab-btn" data-tab="relatorios">📊 Relatórios</button>
+      <button class="tab-btn" data-tab="config">⚙️ Configuração</button>
+    </div>
+    
+    <!-- CONTEÚDO DAS ABAS -->
+    
+    <!-- ABA: MESAS -->
+    <div id="mesas" class="tab-content active">
+      <h2>Mapa do Restaurante</h2>
+      <p style="margin-bottom: 20px; color: #666;">Clique numa mesa para abrir uma comanda ou ver detalhes.</p>
+      
+      <div style="margin-bottom: 30px;">
+        <button class="btn-primary" onclick="novaZonaModal()">+ Nova Zona</button>
+        <button class="btn-primary" onclick="novaMesaModal()">+ Nova Mesa</button>
+      </div>
+      
+      <div id="zonasMesas">
+        <!-- Gerado dinamicamente -->
+      </div>
+    </div>
+    
+    <!-- ABA: CARDÁPIO -->
+    <div id="cardapio" class="tab-content">
+      <h2>Cardápio Digital</h2>
+      
+      <div style="margin-bottom: 20px; display: flex; gap: 10px;">
+        <button class="btn-primary" onclick="novaCategoriModal()">+ Nova Categoria</button>
+        <button class="btn-primary" onclick="novoProdutoModal()">+ Novo Produto</button>
+      </div>
+      
+      <div id="categoriasProdutos">
+        <!-- Gerado dinamicamente -->
+      </div>
+    </div>
+    
+    <!-- ABA: PEDIDOS & COMANDAS -->
+    <div id="pedidos" class="tab-content">
+      <h2>Pedidos & Comandas em Aberto</h2>
+      
+      <table id="tabelaComandasAbertos">
+        <thead>
+          <tr>
+            <th>Comanda</th>
+            <th>Mesa</th>
+            <th>Garçom</th>
+            <th>Abertura</th>
+            <th>Pedidos</th>
+            <th>Subtotal</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-comandas">
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- ABA: HOTEL (Consumo no Quarto) -->
+    <div id="hotel" class="tab-content">
+      <h2>Consumo no Quarto 🏨</h2>
+      <p style="margin-bottom: 20px; color: #666;">Registe consumos do restaurante ou bar para adicionar à conta do hóspede. O consumo é lançado diretamente no folio do Hotel e só é cobrado no check-out.</p>
+      
+      <div class="form-row">
+        <div class="form-group" style="flex:2;">
+          <label>Quarto (hóspedes atualmente em casa)</label>
+          <select id="quartoOcupadoSelect"></select>
+        </div>
+        <div class="form-group">
+          <button type="button" class="btn-secondary" onclick="atualizarQuartosOcupadosSelect()">🔄 Atualizar Quartos</button>
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Descrição do Consumo</label>
+          <input type="text" id="descricaoConsumo" placeholder="ex: Pequeno-almoço premium">
+        </div>
+        <div class="form-group">
+          <label>Categoria</label>
+          <select id="categoriaConsumo">
+            <option value="Restauração">Restauração</option>
+            <option value="Bar">Bar e Bebidas</option>
+            <option value="Serviço">Serviço</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Valor (AOA)</label>
+          <input type="number" id="valorConsumo" placeholder="0.00" step="0.01">
+        </div>
+        <div class="form-group">
+          <button class="btn-success" onclick="lançarConsumoQuartoUI()">✓ Lançar Consumo</button>
+        </div>
+      </div>
+      
+      <table id="tabelaConsumosQuarto">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Hóspede</th>
+            <th>Quarto</th>
+            <th>Descrição</th>
+            <th>Valor</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-consumos">
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- ABA: RESERVAS DE MESA -->
+    <div id="reservas" class="tab-content">
+      <h2>Reservas de Mesa 📅</h2>
+      
+      <div style="margin-bottom: 20px;">
+        <button class="btn-primary" onclick="novaReservaModal()">+ Nova Reserva</button>
+      </div>
+      
+      <table id="tabelaReservas">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Hora</th>
+            <th>Nome</th>
+            <th>Contacto</th>
+            <th>Pessoas</th>
+            <th>Status</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-reservas">
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- ABA: FECHO DE CAIXA -->
+    <div id="caixa" class="tab-content">
+      <h2>Fecho de Caixa 💰</h2>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Data</label>
+          <input type="date" id="dataFecho" value="">
+        </div>
+        <div class="form-group">
+          <button class="btn-primary" onclick="gerarFechoCaixaUI()">Gerar Fecho do Dia</button>
+        </div>
+      </div>
+      
+      <div id="fechoCaixaBox" style="display:none;">
+        <div class="relatorio-box">
+          <h3>Resumo Fecho de Caixa</h3>
+          <div id="resumoFecho"></div>
+          <div style="margin-top: 20px;">
+            <button class="btn-success" onclick="confirmarFechoCaixa()">✓ Confirmar Fecho</button>
+            <button class="btn-secondary" onclick="cancelarFechoCaixa()">✗ Cancelar</button>
+          </div>
+        </div>
+      </div>
+      
+      <table id="tabelaFechos">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Valor Total</th>
+            <th>Num. de Comandas</th>
+            <th>Criado em</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-fechos">
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- ABA: RELATÓRIOS -->
+    <div id="relatorios" class="tab-content">
+      <h2>📊 Relatórios</h2>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Data Inicial</label>
+          <input type="date" id="dataIniRelat" value="">
+        </div>
+        <div class="form-group">
+          <label>Data Final</label>
+          <input type="date" id="dataFimRelat" value="">
+        </div>
+        <div class="form-group">
+          <button class="btn-primary" onclick="gerarRelatorios()">Gerar Relatórios</button>
+        </div>
+      </div>
+      
+      <div id="relatoriosBox"></div>
+    </div>
+    
+    <!-- ABA: CONFIGURAÇÃO -->
+    <div id="config" class="tab-content">
+      <h2>⚙️ Configuração</h2>
+      
+      <h3 style="margin-top: 20px; margin-bottom: 15px;">Taxa de Serviço</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Percentagem de Serviço (%)</label>
+          <input type="number" id="taxaServico" value="10" step="0.1">
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="aplicarTaxaServico" checked>
+            Aplicar taxa automaticamente
+          </label>
+        </div>
+        <div class="form-group">
+          <button class="btn-success" onclick="salvarConfiguracao()">Guardar Configuração</button>
+        </div>
+      </div>
+      
+      <div class="divider"></div>
+      
+      <h3 style="margin-top: 20px; margin-bottom: 15px;">Sincronização Supabase</h3>
+      <p style="margin-bottom: 15px; color: #666; font-size: 14px;">Os dados são sincronizados automaticamente com o Supabase. Use estes botões para recarregar ou forçar uma sincronização.</p>
+      
+      <button class="btn-primary" onclick="carregarDadosRest(); atualizarUI();">🔄 Recarregar Dados</button>
+      <button class="btn-primary" onclick="saveDBRest();">💾 Guardar Dados</button>
+      
+      <div style="margin-top: 30px; padding: 15px; background: #f5f5f5; border-radius: 6px;">
+        <p style="font-size: 12px; color: #666;">
+          <strong>Versão da Base de Dados:</strong> <span id="versaoBD">—</span><br>
+          <strong>Última Atualização:</strong> <span id="ultimaAtualizacao">—</span>
+        </p>
+      </div>
+    </div>
+  </div>
+  
+  <!-- MODAIS -->
+  
+  <!-- Modal: Nova Zona -->
+  <div id="modalNovaZona" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Nova Zona</span>
+        <button class="modal-close" onclick="fecharModal('modalNovaZona')">×</button>
+      </div>
+      <div class="form-group">
+        <label>Nome da Zona</label>
+        <input type="text" id="nomeZona" placeholder="ex: Sala Principal, Esplanada, Bar">
+      </div>
+      <div class="form-group">
+        <label>Descrição</label>
+        <textarea id="descricaoZona" placeholder="ex: Sala interior com climatização" rows="3"></textarea>
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 20px;">
+        <button class="btn-success" onclick="criarNovaZona()">✓ Criar</button>
+        <button class="btn-secondary" onclick="fecharModal('modalNovaZona')">✗ Cancelar</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Modal: Nova Mesa -->
+  <div id="modalNovaMesa" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Nova Mesa</span>
+        <button class="modal-close" onclick="fecharModal('modalNovaMesa')">×</button>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Zona</label>
+          <select id="zonaMesa">
+            <option value="">Selecione uma zona</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Número da Mesa</label>
+          <input type="number" id="numeroMesa" placeholder="ex: 1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Capacidade (pessoas)</label>
+        <input type="number" id="capacidadeMesa" placeholder="ex: 4">
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 20px;">
+        <button class="btn-success" onclick="criarNovaMesa()">✓ Criar</button>
+        <button class="btn-secondary" onclick="fecharModal('modalNovaMesa')">✗ Cancelar</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Modal: Nova Categoria -->
+  <div id="modalNovaCategoria" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Nova Categoria</span>
+        <button class="modal-close" onclick="fecharModal('modalNovaCategoria')">×</button>
+      </div>
+      <div class="form-group">
+        <label>Nome</label>
+        <input type="text" id="nomeCategoria" placeholder="ex: Entradas">
+      </div>
+      <div class="form-group">
+        <label>Ícone/Emoji</label>
+        <input type="text" id="iconeCategoria" placeholder="ex: 🥗" maxlength="5">
+      </div>
+      <div class="form-group">
+        <label>Descrição</label>
+        <textarea id="descricaoCategoria" placeholder="" rows="2"></textarea>
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 20px;">
+        <button class="btn-success" onclick="criarNovaCategoria()">✓ Criar</button>
+        <button class="btn-secondary" onclick="fecharModal('modalNovaCategoria')">✗ Cancelar</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Modal: Novo Produto -->
+  <div id="modalNovoProduto" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Novo Produto</span>
+        <button class="modal-close" onclick="fecharModal('modalNovoProduto')">×</button>
+      </div>
+      <div class="form-group">
+        <label>Categoria</label>
+        <select id="categoriaProduto">
+          <option value="">Selecione uma categoria</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Nome do Produto</label>
+        <input type="text" id="nomeProduto" placeholder="ex: Arroz de Marisco">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Preço (AOA)</label>
+          <input type="number" id="precoProduto" placeholder="0.00" step="0.01">
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="disponvelProduto" checked>
+            Disponível
+          </label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Descrição</label>
+        <textarea id="descricaoProduto" placeholder="" rows="2"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Alergenos (separados por vírgula)</label>
+        <input type="text" id="alergenos" placeholder="ex: Marisco, Glúten">
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 20px;">
+        <button class="btn-success" onclick="criarNovoProduto()">✓ Criar</button>
+        <button class="btn-secondary" onclick="fecharModal('modalNovoProduto')">✗ Cancelar</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Modal: Nova Reserva -->
+  <div id="modalNovaReserva" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Nova Reserva de Mesa</span>
+        <button class="modal-close" onclick="fecharModal('modalNovaReserva')">×</button>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Data</label>
+          <input type="date" id="dataReserva">
+        </div>
+        <div class="form-group">
+          <label>Hora</label>
+          <input type="time" id="horaReserva">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Nome do Cliente</label>
+        <input type="text" id="nomeClienteReserva" placeholder="">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Contacto</label>
+          <input type="tel" id="contactoReserva" placeholder="ex: +244 923 456 789">
+        </div>
+        <div class="form-group">
+          <label>Número de Pessoas</label>
+          <input type="number" id="numPessoasReserva" placeholder="1" min="1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notas Especiais</label>
+        <textarea id="notasReserva" placeholder="" rows="2"></textarea>
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 20px;">
+        <button class="btn-success" onclick="criarNovaReserva()">✓ Reservar</button>
+        <button class="btn-secondary" onclick="fecharModal('modalNovaReserva')">✗ Cancelar</button>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    /* ============================================================
+       INICIALIZAÇÃO & INTERFACE
+       ============================================================ */
+    
+    async function inicializarApp(){
+      await carregarDadosRest();
+      if(typeof hotelDisponivelRest === 'function' && hotelDisponivelRest()){
+        await carregarDadosHotel();
+      }
+      atualizarUI();
+      atualizarQuartosOcupadosSelect();
+      atualizarDataAtual();
+      setInterval(atualizarUI, 5000); // Atualiza cada 5 segundos
+      // Os quartos ocupados do Hotel podem mudar por check-in/check-out
+      // feito no hotel.html — atualiza o dropdown a cada 20s, sem
+      // recarregar DBRest inteiro (só o necessário para a lista de quartos).
+      setInterval(async ()=>{
+        if(typeof hotelDisponivelRest === 'function' && hotelDisponivelRest()){
+          await carregarDadosHotel();
+          atualizarQuartosOcupadosSelect();
+        }
+      }, 20000);
+    }
+    
+    function atualizarDataAtual(){
+      const hoje = new Date();
+      document.getElementById('dataAtual').textContent = 
+        hoje.toLocaleDateString('pt-PT', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+      document.getElementById('dataIniRelat').valueAsDate = hoje;
+      document.getElementById('dataFimRelat').valueAsDate = hoje;
+      document.getElementById('dataFecho').valueAsDate = hoje;
+    }
+    
+    function atualizarUI(){
+      atualizarMesasVisual();
+      atualizarComandasAbertos();
+      atualizarConsumosQuarto();
+      atualizarReservas();
+      atualizarFechos();
+      atualizarHeaderInfo();
+      atualizarZonasDropdown();
+      atualizarCategoriasDropdown();
+      document.getElementById('versaoBD').textContent = versaoRest || '—';
+    }
+    
+    function atualizarHeaderInfo(){
+      const ocupacao = getTotalOcupacaoRest(hojeISORest());
+      const mesasTotal = DBRest.mesas.length;
+      const mesasOcupadas = DBRest.comandas.filter(c => c.status !== 'paga').length;
+      
+      document.getElementById('mesasLivres').textContent = `${mesasTotal - mesasOcupadas}/${mesasTotal}`;
+      document.getElementById('ocupacao').textContent = ocupacao + '%';
+      
+      // Receita de hoje
+      let receitaHoje = 0;
+      const hoje = hojeISORest();
+      const fecho = DBRest.fechosCaixaResto.find(f => f.data === hoje);
+      if(fecho) receitaHoje = fecho.total;
+      document.getElementById('receitaHoje').textContent = receitaHoje.toLocaleString('pt-PT', {style:'currency', currency:'AOA'});
+
+      // Agente de IA: Restaurant AI Chef — prato mais vendido de hoje, reutilizando o
+      // mesmo cálculo já usado no Relatório de Vendas (relatorioVendasRest).
+      const relAgente = relatorioVendasRest(hoje, hoje);
+      const topPratoAgente = relAgente.produtosMaisVendidos[0];
+      const boxAgente = document.getElementById('agenteRestauranteBox');
+      if(boxAgente){
+        boxAgente.innerHTML = `<div class="info-box" style="border-left-color:#1F6F68;background:#f4faf9;">
+          <strong>🤖 Restaurant AI Chef:</strong> ${topPratoAgente
+            ? `prato mais vendido hoje — <b>${topPratoAgente[0]}</b> (${topPratoAgente[1]}x).`
+            : 'ainda sem vendas registadas hoje.'}
+        </div>`;
+      }
+    }
+    
+    /* ============================================================
+       MESAS
+       ============================================================ */
+    
+    function atualizarMesasVisual(){
+      const container = document.getElementById('zonasMesas');
+      container.innerHTML = '';
+      
+      if(DBRest.zonas.length === 0){
+        container.innerHTML = '<p style="color:#999; padding:40px;">Nenhuma zona criada. Clique em "+ Nova Zona" para começar.</p>';
+        return;
+      }
+      
+      DBRest.zonas.forEach(zona => {
+        const mesasZona = DBRest.mesas.filter(m => m.zonaId === zona.id);
+        const zoneHtml = `
+          <div style="margin-bottom: 40px;">
+            <h3 style="margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #2a5298;">
+              ${zona.nome} (${mesasZona.length} mesas)
+            </h3>
+            <div class="mesas-grid">
+              ${mesasZona.map(mesa => {
+                const comanda = DBRest.comandas.find(c => c.mesaId === mesa.id && c.status !== 'paga');
+                let classe = 'livre';
+                let status = 'Livre';
+                
+                if(comanda) {
+                  classe = 'ocupada';
+                  status = 'Ocupada';
+                }
+                const temReserva = DBRest.reservasMesa.some(r => r.mesaId === mesa.id && r.confirmedEm);
+                if(temReserva){
+                  classe = 'reservada';
+                  status = 'Reservada';
+                }
+                
+                return `
+                  <div class="mesa-card ${classe}" onclick="abrirMesaComanda('${mesa.id}')">
+                    <div class="mesa-numero">🪑 ${mesa.numero}</div>
+                    <div class="mesa-status">${status}</div>
+                    <div style="font-size: 11px; color: #666;">Cap.: ${mesa.capacidade} pax</div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+        container.innerHTML += zoneHtml;
+      });
+    }
+    
+    function novaZonaModal(){
+      abrirModal('modalNovaZona');
+    }
+    
+    function criarNovaZona(){
+      const nome = document.getElementById('nomeZona').value.trim();
+      const descricao = document.getElementById('descricaoZona').value.trim();
+      
+      if(!nome){
+        toastRest('Preencha o nome da zona.', 'danger');
+        return;
+      }
+      
+      const zona = {id: uidRest(), nome, descricao};
+      DBRest.zonas.push(zona);
+      saveDBRest();
+      fecharModal('modalNovaZona');
+      document.getElementById('nomeZona').value = '';
+      document.getElementById('descricaoZona').value = '';
+      atualizarUI();
+      toastRest('✓ Zona criada com sucesso.');
+    }
+    
+    function novaMesaModal(){
+      abrirModal('modalNovaMesa');
+    }
+    
+    function criarNovaMesa(){
+      const zonaId = document.getElementById('zonaMesa').value;
+      const numero = document.getElementById('numeroMesa').value;
+      const capacidade = document.getElementById('capacidadeMesa').value;
+      
+      if(!zonaId || !numero || !capacidade){
+        toastRest('Preencha todos os campos.', 'danger');
+        return;
+      }
+      
+      const mesa = {
+        id: uidRest(),
+        zonaId,
+        numero: parseInt(numero),
+        capacidade: parseInt(capacidade),
+        statusAtual: 'livre'
+      };
+      DBRest.mesas.push(mesa);
+      saveDBRest();
+      fecharModal('modalNovaMesa');
+      document.getElementById('numeroMesa').value = '';
+      document.getElementById('capacidadeMesa').value = '';
+      atualizarUI();
+      toastRest('✓ Mesa criada com sucesso.');
+    }
+    
+    function abrirMesaComanda(mesaId){
+      const comanda = DBRest.comandas.find(c => c.mesaId === mesaId && c.status !== 'paga');
+      if(comanda){
+        alert('Comanda #' + comanda.numero + ' já aberta nesta mesa.\nFeche ou pague a comanda anterior.');
+      } else {
+        const garcomId = prompt('ID do Garçom (ou deixar vazio):');
+        if(garcomId !== null){
+          const novaComanda = novaComandaRest(mesaId, garcomId || null);
+          saveDBRest();
+          alert('✓ Comanda #' + novaComanda.numero + ' aberta.');
+          atualizarUI();
+        }
+      }
+    }
+    
+    function atualizarZonasDropdown(){
+      const select = document.getElementById('zonaMesa');
+      const oldValue = select.value;
+      select.innerHTML = '<option value="">Selecione uma zona</option>';
+      DBRest.zonas.forEach(z => {
+        select.innerHTML += `<option value="${z.id}">${z.nome}</option>`;
+      });
+      select.value = oldValue;
+    }
+    
+    /* ============================================================
+       CARDÁPIO
+       ============================================================ */
+    
+    function novaCategoriModal(){
+      abrirModal('modalNovaCategoria');
+    }
+    
+    function criarNovaCategoria(){
+      const nome = document.getElementById('nomeCategoria').value.trim();
+      const icone = document.getElementById('iconeCategoria').value.trim();
+      const descricao = document.getElementById('descricaoCategoria').value.trim();
+      
+      if(!nome){
+        toastRest('Preencha o nome da categoria.', 'danger');
+        return;
+      }
+      
+      const categoria = {
+        id: uidRest(),
+        nome,
+        icone: icone || '📌',
+        descricao,
+        ordenacao: DBRest.categorias.length + 1
+      };
+      DBRest.categorias.push(categoria);
+      saveDBRest();
+      fecharModal('modalNovaCategoria');
+      document.getElementById('nomeCategoria').value = '';
+      document.getElementById('iconeCategoria').value = '';
+      document.getElementById('descricaoCategoria').value = '';
+      atualizarUI();
+      toastRest('✓ Categoria criada com sucesso.');
+    }
+    
+    function novoProdutoModal(){
+      abrirModal('modalNovoProduto');
+    }
+    
+    function criarNovoProduto(){
+      const categoriaId = document.getElementById('categoriaProduto').value;
+      const nome = document.getElementById('nomeProduto').value.trim();
+      const preco = parseFloat(document.getElementById('precoProduto').value) || 0;
+      const descricao = document.getElementById('descricaoProduto').value.trim();
+      const alergenos = document.getElementById('alergenos').value.trim();
+      const disponvel = document.getElementById('disponvelProduto').checked;
+      
+      if(!categoriaId || !nome || preco <= 0){
+        toastRest('Preencha os campos obrigatórios (categoria, nome, preço).', 'danger');
+        return;
+      }
+      
+      const produto = {
+        id: uidRest(),
+        categoriaId,
+        nome,
+        preco: arredRest(preco),
+        descricao,
+        alergenos: alergenos.split(',').map(a => a.trim()).filter(a => a),
+        disponvel,
+        foto: null,
+        calorias: 0
+      };
+      DBRest.produtos.push(produto);
+      saveDBRest();
+      fecharModal('modalNovoProduto');
+      document.getElementById('nomeProduto').value = '';
+      document.getElementById('precoProduto').value = '';
+      document.getElementById('descricaoProduto').value = '';
+      document.getElementById('alergenos').value = '';
+      atualizarUI();
+      toastRest('✓ Produto criado com sucesso.');
+    }
+    
+    function atualizarCategoriasDropdown(){
+      const select = document.getElementById('categoriaProduto');
+      const oldValue = select.value;
+      select.innerHTML = '<option value="">Selecione uma categoria</option>';
+      DBRest.categorias.forEach(c => {
+        select.innerHTML += `<option value="${c.id}">${c.icone} ${c.nome}</option>`;
+      });
+      select.value = oldValue;
+    }
+    
+    function atualizarCardapioVisual(){
+      const container = document.getElementById('categoriasProdutos');
+      container.innerHTML = '';
+      
+      if(DBRest.categorias.length === 0){
+        container.innerHTML = '<p style="color:#999; padding:40px;">Nenhuma categoria criada.</p>';
+        return;
+      }
+      
+      DBRest.categorias.forEach(cat => {
+        const produtos = DBRest.produtos.filter(p => p.categoriaId === cat.id);
+        const catHtml = `
+          <h3 style="margin: 30px 0 15px 0; padding-bottom: 10px; border-bottom: 2px solid #2a5298;">
+            ${cat.icone} ${cat.nome}
+          </h3>
+          <div class="produtos-grid">
+            ${produtos.map(prod => `
+              <div class="produto-card">
+                <div class="produto-imagem">${prod.icone || '🍽️'}</div>
+                <div class="produto-info">
+                  <div class="produto-nome">${prod.nome}</div>
+                  <div class="produto-descricao">${prod.descricao}</div>
+                  <div class="produto-preco">${prod.preco.toLocaleString('pt-PT')} AOA</div>
+                  <div style="font-size: 11px; color: #999; margin-top: 5px;">
+                    ${prod.disponvel ? '✓ Disponível' : '✗ Indisponível'}
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+        container.innerHTML += catHtml;
+      });
+    }
+    
+    /* ============================================================
+       COMANDAS & PEDIDOS
+       ============================================================ */
+    
+    function atualizarComandasAbertos(){
+      const tbody = document.getElementById('tbody-comandas');
+      const comandasAbertos = DBRest.comandas.filter(c => c.status !== 'paga');
+      
+      tbody.innerHTML = '';
+      if(comandasAbertos.length === 0){
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#999; padding:40px;">Nenhuma comanda aberta.</td></tr>';
+        return;
+      }
+      
+      comandasAbertos.forEach(comanda => {
+        const mesa = DBRest.mesas.find(m => m.id === comanda.mesaId);
+        const garcom = DBRest.garcons.find(g => g.id === comanda.garcomId);
+        const numPedidos = comanda.pedidos.length;
+        const tempoAberto = new Date() - new Date(comanda.dataAbertura);
+        const minutos = Math.floor(tempoAberto / 60000);
+        
+        const html = `
+          <tr>
+            <td><strong>${comanda.numero}</strong></td>
+            <td>${mesa?.numero || '—'}</td>
+            <td>${garcom?.nome || 'N/A'}</td>
+            <td>${comanda.dataAbertura.split('T')[1].substring(0, 5)}</td>
+            <td>${numPedidos}</td>
+            <td>${comanda.total.toLocaleString('pt-PT')} AOA</td>
+            <td>
+              <button class="btn-sm btn-primary" onclick="editarComanda('${comanda.id}')">Editar</button>
+              <button class="btn-sm btn-success" onclick="pagarComandaUI('${comanda.id}')">Pagar</button>
+            </td>
+          </tr>
+        `;
+        tbody.innerHTML += html;
+      });
+    }
+    
+    function editarComanda(comandaId){
+      alert('Funcionalidade em desenvolvimento.\nComanda: ' + comandaId);
+    }
+    
+    function pagarComandaUI(comandaId){
+      const comanda = getComandaRest(comandaId);
+      if(!comanda) return;
+      
+      const forma = prompt('Forma de pagamento (Cash/Banco/TPA/Transferência/Multicaixa):');
+      if(forma){
+        const conta = prompt('Conta (ou deixar vazio):');
+        pagarComandaRest(comandaId, forma, conta || null);
+        saveDBRest();
+        atualizarUI();
+        toastRest('✓ Comanda paga com sucesso.');
+      }
+    }
+    
+    /* ============================================================
+       CONSUMO NO QUARTO
+       ============================================================ */
+    
+    /* Preenche o dropdown de quartos com os quartos REAIS do Hotel que
+       estão ocupados neste momento (feature-detection: se hotel-core.js
+       não estiver incluído na página, avisa e desativa o select em vez
+       de deixar lançar um consumo sem quarto real por trás). */
+    function atualizarQuartosOcupadosSelect(){
+      const sel = document.getElementById('quartoOcupadoSelect');
+      if(!sel) return;
+      if(typeof hotelDisponivelRest !== 'function' || !hotelDisponivelRest()){
+        sel.innerHTML = '<option value="">— Módulo do Hotel não está ligado nesta página —</option>';
+        sel.disabled = true;
+        return;
+      }
+      const quartos = listarQuartosOcupadosHotelRest();
+      sel.disabled = false;
+      sel.innerHTML = '';
+      if(quartos.length === 0){
+        sel.innerHTML = '<option value="">— Nenhum quarto ocupado neste momento —</option>';
+        return;
+      }
+      quartos.forEach(q => {
+        const opt = document.createElement('option');
+        opt.value = q.reservaId;
+        opt.dataset.quartoId = q.quartoId;
+        opt.dataset.numero = q.numero;
+        opt.textContent = `Qt. ${q.numero} — ${q.hospedeNome}`;
+        sel.appendChild(opt);
+      });
+    }
+    
+    function atualizarConsumosQuarto(){
+      const tbody = document.getElementById('tbody-consumos');
+      tbody.innerHTML = '';
+      
+      if(DBRest.consumosQuarto.length === 0){
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#999; padding:40px;">Nenhum consumo registado.</td></tr>';
+        return;
+      }
+      
+      DBRest.consumosQuarto.slice(-20).reverse().forEach(cons => {
+        const statusBadge = cons.espelhadoNoFolio
+          ? '<span class="badge badge-success">✓ No folio do Hotel</span>'
+          : '<span class="badge badge-warning">⏳ Não espelhado</span>';
+        const reservaHotel = (typeof DBHotel !== 'undefined' && DBHotel.reservas) ? DBHotel.reservas.find(r => r.id === cons.reservaId) : null;
+        const nomeHospede = reservaHotel ? reservaHotel.hospedeNome : (cons.reservaId || '—');
+        const html = `
+          <tr>
+            <td>${cons.dataLancamento.split('T')[0]}</td>
+            <td>${nomeHospede}</td>
+            <td>${cons.quartoId != null ? cons.quartoId : '—'}</td>
+            <td>${cons.descricao}</td>
+            <td>${cons.valor.toLocaleString('pt-PT')} AOA</td>
+            <td>${statusBadge}</td>
+          </tr>
+        `;
+        tbody.innerHTML += html;
+      });
+    }
+    
+    async function lançarConsumoQuartoUI(){
+      const sel = document.getElementById('quartoOcupadoSelect');
+      const opt = sel && sel.selectedOptions[0];
+      const reservaId = sel ? sel.value : '';
+      const quartoId = opt ? opt.dataset.quartoId : '';
+      const descricao = document.getElementById('descricaoConsumo').value.trim();
+      const categoria = document.getElementById('categoriaConsumo').value;
+      const valor = parseFloat(document.getElementById('valorConsumo').value) || 0;
+      
+      if(!reservaId || !descricao || valor <= 0){
+        toastRest('Selecione um quarto ocupado e preencha descrição e valor.', 'danger');
+        return;
+      }
+      
+      await lançarConsumoQuartoRest(reservaId, quartoId, descricao, valor, categoria);
+      document.getElementById('descricaoConsumo').value = '';
+      document.getElementById('valorConsumo').value = '';
+      atualizarQuartosOcupadosSelect();
+      atualizarUI();
+      toastRest('✓ Consumo lançado na conta do hóspede.');
+    }
+    
+    /* ============================================================
+       RESERVAS
+       ============================================================ */
+    
+    function novaReservaModal(){
+      abrirModal('modalNovaReserva');
+      const hoje = new Date().toISOString().split('T')[0];
+      document.getElementById('dataReserva').value = hoje;
+    }
+    
+    function criarNovaReserva(){
+      const data = document.getElementById('dataReserva').value;
+      const hora = document.getElementById('horaReserva').value;
+      const nome = document.getElementById('nomeClienteReserva').value.trim();
+      const contacto = document.getElementById('contactoReserva').value.trim();
+      const numPessoas = parseInt(document.getElementById('numPessoasReserva').value) || 1;
+      const notas = document.getElementById('notasReserva').value.trim();
+      
+      if(!data || !hora || !nome){
+        toastRest('Preencha data, hora e nome.', 'danger');
+        return;
+      }
+      
+      // Encontra uma mesa disponível
+      const mesasDisponiveis = getMesasDisponiveisRest(data, hora);
+      if(mesasDisponiveis.length === 0){
+        toastRest('Nenhuma mesa disponível para essa data/hora.', 'danger');
+        return;
+      }
+      
+      const mesaSelecionada = mesasDisponiveis[0];
+      const reserva = reservarMesaRest(data, hora, mesaSelecionada.id, nome, contacto, numPessoas, notas);
+      reserva.confirmedEm = new Date().toISOString();
+      
+      saveDBRest();
+      fecharModal('modalNovaReserva');
+      document.getElementById('nomeClienteReserva').value = '';
+      document.getElementById('contactoReserva').value = '';
+      document.getElementById('numPessoasReserva').value = '1';
+      document.getElementById('notasReserva').value = '';
+      atualizarUI();
+      toastRest('✓ Reserva criada para ' + mesaSelecionada.numero + ' (Mesa).');
+    }
+    
+    function atualizarReservas(){
+      const tbody = document.getElementById('tbody-reservas');
+      const hoje = hojeISORest();
+      const reservasAtuais = DBRest.reservasMesa.filter(r => r.data >= hoje);
+      
+      tbody.innerHTML = '';
+      if(reservasAtuais.length === 0){
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#999; padding:40px;">Nenhuma reserva futura.</td></tr>';
+        return;
+      }
+      
+      reservasAtuais.slice(0, 50).forEach(reserva => {
+        const statusBadge = reserva.confirmedEm ? '<span class="badge badge-success">✓ Confirmada</span>' : '<span class="badge badge-warning">⏳ Pendente</span>';
+        const html = `
+          <tr>
+            <td>${reserva.data}</td>
+            <td>${reserva.hora}</td>
+            <td>${reserva.nomeCliente}</td>
+            <td>${reserva.contacto || '—'}</td>
+            <td>${reserva.numeroMesas}</td>
+            <td>${statusBadge}</td>
+            <td>
+              <button class="btn-sm btn-danger" onclick="cancelarReserva('${reserva.id}')">Cancelar</button>
+            </td>
+          </tr>
+        `;
+        tbody.innerHTML += html;
+      });
+    }
+    
+    function cancelarReserva(reservaId){
+      if(confirm('Tem a certeza que deseja cancelar esta reserva?')){
+        DBRest.reservasMesa = DBRest.reservasMesa.filter(r => r.id !== reservaId);
+        saveDBRest();
+        atualizarUI();
+        toastRest('✓ Reserva cancelada.');
+      }
+    }
+    
+    /* ============================================================
+       FECHO DE CAIXA
+       ============================================================ */
+    
+    async function gerarFechoCaixaUI(){
+      const data = document.getElementById('dataFecho').value;
+      if(!data){
+        toastRest('Selecione uma data.', 'danger');
+        return;
+      }
+      
+      const fecho = DBRest.fechosCaixaResto.find(f => f.data === data);
+
+      // Lançamentos que o(a) Chefe de Caixa já declarou no Tesoucantábil
+      // (index.html) para este dia — só leitura, para conferência.
+      document.getElementById('resumoFecho').innerHTML = '<p class="note">A consultar os lançamentos do Chefe de Caixa no Tesoucantábil...</p>';
+      document.getElementById('fechoCaixaBox').style.display = 'block';
+      const chefeCaixa = await buscarLancamentosChefeCaixaRest(data);
+
+      if(!fecho && (!chefeCaixa.ok || chefeCaixa.linhas.length === 0)){
+        toastRest('Nenhum movimento de caixa nem lançamento do Chefe de Caixa para esta data.', 'danger');
+        document.getElementById('fechoCaixaBox').style.display = 'none';
+        return;
+      }
+      
+      let html = '<div class="relatorio-item"><strong>Data:</strong> ' + data + '</div>';
+      html += '<div class="relatorio-item"><strong>Número de Comandas:</strong> ' + (fecho ? fecho.linhas.length : 0) + '</div>';
+      html += '<div class="divider"></div>';
+      
+      const formas = {};
+      (fecho ? fecho.linhas : []).forEach(linha => {
+        if(!formas[linha.formaPagamento]){
+          formas[linha.formaPagamento] = 0;
+        }
+        formas[linha.formaPagamento] += linha.valor;
+      });
+      
+      Object.entries(formas).forEach(([forma, valor]) => {
+        html += `<div class="relatorio-item"><strong>${forma}:</strong> <span class="relatorio-valor">${valor.toLocaleString('pt-PT')} AOA</span></div>`;
+      });
+      
+      const totalLocal = fecho ? fecho.total : 0;
+      html += '<div class="divider"></div>';
+      html += `<div class="relatorio-item" style="font-size: 16px;"><strong>TOTAL (Restaurante):</strong> <span class="relatorio-valor">${totalLocal.toLocaleString('pt-PT')} AOA</span></div>`;
+
+      html += '<div class="divider"></div>';
+      html += '<h3 style="margin:10px 0 6px;">🧾 Lançamentos do Chefe de Caixa (Tesoucantábil)</h3>';
+      if(!chefeCaixa.ok){
+        html += `<p class="note" style="color:#b33;">${chefeCaixa.msg}</p>`;
+      } else if(chefeCaixa.linhas.length === 0){
+        html += '<p class="note">Nenhum lançamento de Restauração declarado neste dia no Tesoucantábil.</p>';
+      } else {
+        chefeCaixa.linhas.forEach(l => {
+          html += `<div class="relatorio-item"><strong>${l.formaPagamento || '—'}${l.turno ? ' · Turno ' + l.turno : ''}:</strong> <span class="relatorio-valor">${Number(l.valor||0).toLocaleString('pt-PT')} ${l.moeda || 'KZ'}</span>${l.nFatura ? ' <small>(' + l.nFatura + ')</small>' : ''}</div>`;
+        });
+        html += `<div class="relatorio-item" style="font-size: 16px;"><strong>TOTAL (Tesoucantábil):</strong> <span class="relatorio-valor">${chefeCaixa.total.toLocaleString('pt-PT')} AOA</span></div>`;
+
+        const diferenca = arredRest(totalLocal - chefeCaixa.total);
+        if(Math.abs(diferenca) >= 0.5){
+          html += `<p class="note" style="color:#b33;">⚠️ Diferença entre o Restaurante e o Tesoucantábil: ${diferenca.toLocaleString('pt-PT')} AOA. Confirme se falta lançar o fecho de caixa correspondente no Tesoucantábil (ou se há valores a mais/a menos).</p>`;
+        } else {
+          html += '<p class="note" style="color:#2a7;">✓ O valor bate com o declarado no Tesoucantábil.</p>';
+        }
+      }
+      
+      document.getElementById('resumoFecho').innerHTML = html;
+      document.getElementById('fechoCaixaBox').style.display = 'block';
+      
+      // Guardar referência para confirmar depois
+      window._fechoAtual = fecho || null;
+    }
+    
+    function confirmarFechoCaixa(){
+      if(!window._fechoAtual){
+        toastRest('Nenhum fecho em aberto.', 'danger');
+        return;
+      }
+      window._fechoAtual.confirmadoEm = new Date().toISOString();
+      saveDBRest();
+      window._fechoAtual = null;
+      document.getElementById('fechoCaixaBox').style.display = 'none';
+      atualizarUI();
+      toastRest('✓ Fecho de caixa confirmado.');
+    }
+    
+    function cancelarFechoCaixa(){
+      window._fechoAtual = null;
+      document.getElementById('fechoCaixaBox').style.display = 'none';
+      document.getElementById('resumoFecho').innerHTML = '';
+    }
+    
+    function atualizarFechos(){
+      const tbody = document.getElementById('tbody-fechos');
+      tbody.innerHTML = '';
+      
+      if(DBRest.fechosCaixaResto.length === 0){
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#999; padding:40px;">Nenhum fecho de caixa registado.</td></tr>';
+        return;
+      }
+      
+      DBRest.fechosCaixaResto.slice(-30).reverse().forEach(fecho => {
+        const html = `
+          <tr>
+            <td>${fecho.data}</td>
+            <td>${fecho.total.toLocaleString('pt-PT')} AOA</td>
+            <td>${fecho.linhas.length}</td>
+            <td>${fecho.criadoEm.split('T')[0]}</td>
+            <td>
+              <button class="btn-sm btn-primary" onclick="verFecho('${fecho.id}')">Ver</button>
+            </td>
+          </tr>
+        `;
+        tbody.innerHTML += html;
+      });
+    }
+    
+    function verFecho(fechoId){
+      const fecho = DBRest.fechosCaixaResto.find(f => f.id === fechoId);
+      if(!fecho) return;
+      alert('Fecho de ' + fecho.data + '\nTotal: ' + fecho.total.toLocaleString('pt-PT') + ' AOA\nComandas: ' + fecho.linhas.length);
+    }
+    
+    /* ============================================================
+       RELATÓRIOS
+       ============================================================ */
+    
+    function gerarRelatorios(){
+      const dataIni = document.getElementById('dataIniRelat').value;
+      const dataFim = document.getElementById('dataFimRelat').value;
+      
+      if(!dataIni || !dataFim){
+        toastRest('Selecione o intervalo de datas.', 'danger');
+        return;
+      }
+      
+      const relVendas = relatorioVendasRest(dataIni, dataFim);
+      const relDesempenho = relatorioDesempenhoGarcomRest(dataIni, dataFim);
+      const relTempoPrep = relatorioTempoPreparacaoRest(dataIni, dataFim);
+      
+      let html = '<h3>Relatórios de Vendas — ' + dataIni + ' a ' + dataFim + '</h3>';
+      
+      // Box 1: Resumo Geral
+      html += `
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Vendas Totais</div>
+            <div class="stat-valor">${relVendas.totalVendas.toLocaleString('pt-PT')} AOA</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Ticket Médio</div>
+            <div class="stat-valor">${relVendas.ticketMedio.toLocaleString('pt-PT')} AOA</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Mesas Servidas</div>
+            <div class="stat-valor">${relVendas.mesasServidas}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Pedidos Processados</div>
+            <div class="stat-valor">${relVendas.pedidosProcessados}</div>
+          </div>
+        </div>
+      `;
+      
+      // Box 2: Produtos Mais Vendidos
+      html += '<h4 style="margin-top: 30px; margin-bottom: 15px;">Produtos Mais Vendidos</h4>';
+      html += '<table><thead><tr><th>Produto</th><th>Quantidade</th></tr></thead><tbody>';
+      relVendas.produtosMaisVendidos.forEach(([nome, qtd]) => {
+        html += `<tr><td>${nome}</td><td style="text-align:right;">${qtd}</td></tr>`;
+      });
+      html += '</tbody></table>';
+      
+      // Box 3: Desempenho por Garçom
+      html += '<h4 style="margin-top: 30px; margin-bottom: 15px;">Desempenho por Garçom</h4>';
+      html += '<table><thead><tr><th>Garçom</th><th>Vendas</th><th>Mesas</th><th>Ticket</th><th>Comissão</th></tr></thead><tbody>';
+      relDesempenho.forEach(g => {
+        html += `<tr><td>${g.nome}</td><td style="text-align:right;">${g.totalVendas.toLocaleString('pt-PT')} AOA</td><td style="text-align:right;">${g.numMesas}</td><td style="text-align:right;">${g.ticketMedio.toLocaleString('pt-PT')} AOA</td><td style="text-align:right;">${g.comissao.toLocaleString('pt-PT')} AOA</td></tr>`;
+      });
+      html += '</tbody></table>';
+      
+      // Box 4: Tempo de Preparação
+      html += '<h4 style="margin-top: 30px; margin-bottom: 15px;">Tempo Médio de Preparação</h4>';
+      html += `
+        <div class="relatorio-box">
+          <div class="relatorio-item"><strong>Pedidos Analisados:</strong> ${relTempoPrep.pedidosAnalisados}</div>
+          <div class="relatorio-item"><strong>Tempo Médio:</strong> ${relTempoPrep.tempoMedioMin} minutos</div>
+          <div class="relatorio-item"><strong>Tempo Mínimo:</strong> ${relTempoPrep.tempoMinimoMin} minutos</div>
+          <div class="relatorio-item"><strong>Tempo Máximo:</strong> ${relTempoPrep.tempoMaximoMin} minutos</div>
+        </div>
+      `;
+      
+      document.getElementById('relatoriosBox').innerHTML = html;
+    }
+    
+    /* ============================================================
+       CONFIGURAÇÃO
+       ============================================================ */
+    
+    function salvarConfiguracao(){
+      const taxa = parseFloat(document.getElementById('taxaServico').value) || 10;
+      const aplicar = document.getElementById('aplicarTaxaServico').checked;
+      
+      DBRest.taxasServico = {
+        percentual: taxa,
+        aplicarPorcentagem: aplicar
+      };
+      
+      saveDBRest();
+      toastRest('✓ Configuração guardada.');
+    }
+    
+    /* ============================================================
+       MODAIS & UTILITÁRIOS
+       ============================================================ */
+    
+    function abrirModal(id){
+      document.getElementById(id).classList.add('active');
+    }
+    
+    function fecharModal(id){
+      document.getElementById(id).classList.remove('active');
+    }
+    
+    // Fecha modal ao clicar fora
+    document.addEventListener('click', function(e){
+      if(e.target.classList.contains('modal')){
+        e.target.classList.remove('active');
+      }
+    });
+    
+    // Navegação por abas
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', function(){
+        const tabId = this.dataset.tab;
+        
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        
+        document.getElementById(tabId).classList.add('active');
+        this.classList.add('active');
+        
+        // Atualizar cardápio quando entrar nessa aba
+        if(tabId === 'cardapio'){
+          atualizarCardapioVisual();
+        }
+      });
+    });
+    
+    // Iniciar app
+    window.addEventListener('load', inicializarApp);
+  </script>
+</body>
+</html>
