@@ -82,6 +82,15 @@ function gerarNumeroFaturaHotel(quartoId){
   return `ZL/${ano}/H-${quartoId}-${Date.now().toString(36).slice(-5).toUpperCase()}`;
 }
 
+/* Devolve o número do quarto a partir do seu id (ou o próprio id, como
+   fallback, se o quarto não for encontrado — ex.: já apagado). Usada em
+   vários pontos do check-out e do folio; estava em falta, o que fazia o
+   botão de Check-out "não reagir" (erro JS silencioso antes de o modal abrir). */
+function numeroQuartoHotel(quartoId){
+  const quarto = DBHotel.quartos.find(q => q.id === quartoId);
+  return quarto ? quarto.numero : quartoId;
+}
+
 function toastHotel(msg, tipo='info'){
   let el = document.getElementById('toastBoxHotel');
   if(!el){
