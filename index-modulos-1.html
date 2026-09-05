@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tesoucantabil — Escolha o Módulo</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  :root{
+    --verde-escuro:#14232B; --verde:#1F6F68; --verde-claro:#E4F0EE;
+    --castanho:#C89B3C; --azul-nav:#1F6F68;
+    --creme:#FBF3E1; --creme-texto:#14232B; --linha-alt:#FBF8F1; --cinza-sub:#F6F1E7;
+    --bg:#F6F1E7; --card:#ffffff; --texto:#14232B; --muted:#55666E;
+    --borda:#DDD2B8; --vermelho:#A6472E; --amarelo:#C89B3C;
+    --gold:#C89B3C; --roxo:#6B4FA5; --roxo-claro:#EDE7F9;
+    --font-display:'Fraunces',Georgia,serif; --font-body:'Inter','Segoe UI',Arial,Helvetica,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--font-body);background:linear-gradient(135deg,var(--verde-escuro),var(--verde));min-height:100vh;display:flex;align-items:center;justify-content:center;color:var(--texto);}
+  .container{max-width:1100px;width:90%;padding:40px;}
+  .header{text-align:center;margin-bottom:50px;color:#fff;}
+  .header h1{font-family:var(--font-display);font-size:42px;font-weight:600;margin:0 0 8px;letter-spacing:.01em;}
+  .header p{font-size:16px;opacity:.9;margin:0;}
+  .header small{font-size:13px;opacity:.7;}
+  .modulos{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px;margin-bottom:40px;}
+  .modulo{background:var(--card);border:2px solid var(--borda);border-radius:12px;padding:32px 24px;text-align:center;cursor:pointer;transition:all .25s;box-shadow:0 4px 12px rgba(0,0,0,.08);}
+  .modulo:hover{border-color:var(--verde);box-shadow:0 8px 24px rgba(31,111,104,.2);transform:translateY(-4px);}
+  .modulo-icon{font-size:48px;margin-bottom:16px;}
+  .modulo h2{font-family:var(--font-display);font-size:24px;font-weight:600;color:var(--verde-escuro);margin:0 0 10px;}
+  .modulo p{color:var(--muted);font-size:14px;line-height:1.6;margin:0 0 20px;}
+  .modulo-features{text-align:left;background:var(--cinza-sub);padding:16px;border-radius:8px;margin-bottom:20px;font-size:13px;}
+  .modulo-features li{margin-bottom:6px;color:var(--texto);}
+  .modulo-btn{display:inline-block;background:var(--verde);color:#fff;padding:11px 28px;border:none;border-radius:8px;font-family:var(--font-body);font-weight:600;font-size:14px;cursor:pointer;transition:background .15s;text-decoration:none;width:100%;}
+  .modulo:hover .modulo-btn{background:#195A54;}
+  .info-box{background:var(--creme);border:1px solid var(--gold);border-radius:10px;padding:16px 20px;margin-top:40px;color:var(--texto);font-size:13.5px;}
+  .info-box strong{display:block;margin-bottom:8px;color:var(--verde-escuro);}
+  .info-box ul{margin:0;padding-left:20px;}
+  .info-box li{margin-bottom:6px;}
+  .sync-status{position:fixed;bottom:20px;right:20px;background:#fff;border:1px solid var(--borda);border-radius:8px;padding:12px 16px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,.1);}
+  .sync-status .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted);}
+  .sync-status.synced .dot{background:var(--verde);}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h1>Tesoucantabil</h1>
+    <p>Sistema Integrado de Tesouraria, Contabilidade e Análise</p>
+    <small>Powered by Zoom's Lodge</small>
+  </div>
+
+  <div class="modulos">
+    <!-- TESOURARIA -->
+    <div class="modulo">
+      <div class="modulo-icon">💰</div>
+      <h2>Tesouraria</h2>
+      <p>Gestão de fluxo de caixa e movimentações bancárias</p>
+      <ul class="modulo-features">
+        <li>✓ Lançamentos (receitas/despesas)</li>
+        <li>✓ Contas bancárias</li>
+        <li>✓ Previsão de cash flow</li>
+        <li>✓ Dashboard de saldos</li>
+      </ul>
+      <button class="modulo-btn" onclick="irPara('tesouraria.html')">Abrir Tesouraria →</button>
+    </div>
+
+    <!-- CONTABILIDADE -->
+    <div class="modulo">
+      <div class="modulo-icon">📚</div>
+      <h2>Contabilidade</h2>
+      <p>Gestão contábil e plano de contas</p>
+      <ul class="modulo-features">
+        <li>✓ Plano de contas</li>
+        <li>✓ Lançamentos contábeis</li>
+        <li>✓ Balancete de verificação</li>
+        <li>✓ Dashboard de patrimônio</li>
+      </ul>
+      <button class="modulo-btn" onclick="irPara('contabilidade.html')">Abrir Contabilidade →</button>
+    </div>
+
+    <!-- CONTABILIDADE ANALÍTICA -->
+    <div class="modulo">
+      <div class="modulo-icon">📊</div>
+      <h2>Análise Contábil</h2>
+      <p>Análise de custos por centro de custo</p>
+      <ul class="modulo-features">
+        <li>✓ Centros de custo</li>
+        <li>✓ Alocação de despesas</li>
+        <li>✓ Análise mês a mês</li>
+        <li>✓ Distribuição de custos</li>
+      </ul>
+      <button class="modulo-btn" onclick="irPara('contabilidade-analitica.html')">Abrir Análise →</button>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <strong>ℹ️ Como Funciona a Integração</strong>
+    <ul>
+      <li><b>Base de dados única:</b> Os três módulos partilham os mesmos dados via localStorage</li>
+      <li><b>Sincronização automática:</b> Qualquer alteração num módulo aparece nos outros</li>
+      <li><b>Navegação cruzada:</b> Cada módulo tem botões para ir aos outros</li>
+      <li><b>Fluxo recomendado:</b> Tesouraria (entrada) → Contabilidade (registos) → Análise Contábil (custos)</li>
+      <li><b>Sem servidor:</b> Todos os dados são armazenados localmente (segurança e privacidade)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="sync-status synced" id="syncStatus">
+  <span class="dot"></span>
+  <span id="syncText">✓ Pronto</span>
+</div>
+
+<script>
+function irPara(pagina) {
+  window.location.href = pagina;
+}
+
+// Verificar status de sincronização
+function verificarSync() {
+  const lastSync = localStorage.getItem('tesoucantabil_sync');
+  const status = document.getElementById('syncStatus');
+  const text = document.getElementById('syncText');
+  
+  if(lastSync) {
+    const data = new Date(lastSync);
+    const agora = new Date();
+    const minutos = Math.floor((agora - data) / 60000);
+    
+    if(minutos < 1) {
+      text.textContent = '✓ Acabado de sincronizar';
+    } else if(minutos < 60) {
+      text.textContent = `✓ Sincronizado há ${minutos}m`;
+    } else {
+      const horas = Math.floor(minutos / 60);
+      text.textContent = `✓ Sincronizado há ${horas}h`;
+    }
+  }
+}
+
+verificarSync();
+setInterval(verificarSync, 30000);
+</script>
+
+</body>
+</html>

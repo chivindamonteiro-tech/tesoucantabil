@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tesouraria — Tesoucantabil</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+  :root{
+    --verde-escuro:#14232B; --verde:#1F6F68; --verde-claro:#E4F0EE;
+    --castanho:#C89B3C; --azul-nav:#1F6F68;
+    --creme:#FBF3E1; --creme-texto:#14232B; --linha-alt:#FBF8F1; --cinza-sub:#F6F1E7;
+    --bg:#F6F1E7; --card:#ffffff; --texto:#14232B; --muted:#55666E;
+    --borda:#DDD2B8; --vermelho:#A6472E; --amarelo:#C89B3C;
+    --gold:#C89B3C; --roxo:#6B4FA5; --roxo-claro:#EDE7F9;
+    --font-display:'Fraunces',Georgia,serif; --font-body:'Inter','Segoe UI',Arial,Helvetica,sans-serif; --font-mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:var(--font-body);background:var(--bg);color:var(--texto);}
+  #app{display:flex;min-height:100vh;}
+  nav{width:224px;background:var(--verde-escuro);color:#fff;flex-shrink:0;padding:20px 0;}
+  nav h1{font-size:15px;padding:0 18px 16px;margin:0 0 6px;border-bottom:1px solid rgba(246,241,231,.14);line-height:1.35;font-family:var(--font-display);font-weight:600;letter-spacing:.01em;}
+  nav .item{padding:10px 18px;cursor:pointer;font-size:13.5px;opacity:.82;border-left:3px solid transparent;color:#C7D2D4;transition:background .15s,opacity .15s;}
+  nav .item:hover{opacity:1;background:rgba(246,241,231,.07);color:#fff;}
+  nav .item.active{opacity:1;background:var(--azul-nav);color:#fff;border-left:3px solid var(--gold);font-weight:600;}
+  nav .divider{height:1px;background:rgba(246,241,231,.14);margin:12px 0;}
+  nav .section-label{font-size:10px;color:rgba(199,210,212,.6);text-transform:uppercase;letter-spacing:.05em;padding:12px 18px 6px;font-weight:600;}
+  main{flex:1;padding:24px 32px;overflow-x:auto;}
+  h2{background:var(--verde-escuro);color:#fff;font-family:var(--font-display);font-weight:600;
+     padding:12px 20px;margin:0 0 16px;border-radius:8px;font-size:17px;letter-spacing:.01em;}
+  .cards{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px;}
+  .card{background:var(--card);border:1px solid var(--borda);border-radius:10px;padding:16px 20px;min-width:180px;flex:1;overflow-wrap:break-word;}
+  .card .lbl{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+  .card .val{font-size:22px;font-weight:600;margin-top:5px;font-family:var(--font-mono);overflow-wrap:break-word;word-break:break-word;}
+  .val.pos{color:var(--verde);} .val.neg{color:var(--vermelho);}
+  table{width:100%;border-collapse:collapse;background:var(--card);font-size:13px;}
+  th,td{padding:9px 11px;border-bottom:1px solid var(--linha-alt);text-align:left;white-space:nowrap;}
+  th{background:var(--verde-escuro);color:#fff;font-family:var(--font-body);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0;}
+  tbody tr:nth-child(even) td{background:var(--linha-alt);}
+  tr:hover td{background:#F3ECD9;}
+  td.right, th.right{font-family:var(--font-mono);text-align:right;}
+  .tablewrap{border:1px solid var(--borda);border-radius:10px;overflow:auto;max-height:60vh;margin-top:10px;}
+  form.inline{background:var(--card);border:1px solid var(--borda);border-radius:10px;padding:18px;margin-bottom:18px;}
+  form.inline .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
+  label{font-size:11.5px;color:var(--muted);display:block;margin-bottom:4px;font-weight:500;}
+  input,select{width:100%;padding:8px 10px;border:1px solid var(--borda);border-radius:7px;font-size:13px;font-family:var(--font-body);background:#fff;color:var(--texto);}
+  input:focus,select:focus{outline:2px solid var(--gold);outline-offset:1px;border-color:var(--gold);}
+  button{cursor:pointer;border:none;border-radius:7px;padding:9px 16px;font-size:13px;font-weight:600;background:var(--verde);color:#fff;font-family:var(--font-body);transition:background .15s;}
+  button:hover{background:#195A54;}
+  button.sec{background:#fff;color:var(--verde-escuro);border:1px solid var(--borda);}
+  button.sec:hover{background:var(--bg);}
+  .badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+  .badge.pago{background:var(--verde-claro);color:var(--verde);} .badge.pendente{background:#FBF3E1;color:#8A6A22;} .badge.atraso{background:#F5E6E1;color:var(--vermelho);}
+  .note{font-size:12.5px;color:var(--creme-texto);background:var(--creme);padding:9px 13px;border-radius:7px;margin-top:8px;display:block;border:1px solid var(--gold);font-style:italic;}
+  .actions{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;}
+  #toast{position:fixed;bottom:18px;right:18px;background:var(--verde-escuro);color:#fff;padding:11px 20px;border-radius:8px;font-size:13px;display:none;z-index:99;}
+  .link-modulo{background:var(--roxo-claro);color:var(--roxo);border:1px solid var(--roxo);padding:8px 14px;text-decoration:none;border-radius:6px;font-size:12px;font-weight:600;display:inline-block;cursor:pointer;}
+  .link-modulo:hover{background:var(--roxo);color:#fff;}
+</style>
+</head>
+<body>
+<div id="app">
+  <nav>
+    <h1>💰 Tesouraria</h1>
+    <div class="section-label">Navegação</div>
+    <div class="item active" data-view="dashboard">📊 Dashboard</div>
+    <div class="item" data-view="lancamentos">📝 Lançamentos</div>
+    <div class="item" data-view="contas">💳 Contas</div>
+    <div class="item" data-view="previsao">🔮 Previsão</div>
+    <div class="divider"></div>
+    <div class="section-label">Integração</div>
+    <div class="item" data-link="contabilidade">📚 Contabilidade</div>
+    <div class="item" data-link="analitica">📊 Analítica</div>
+  </nav>
+  <main id="main"></main>
+</div>
+<div id="toast"></div>
+
+<script>
+// ====== GERENCIAMENTO DE DADOS ======
+const SHARED_DB_KEY = 'tesoucantabil_db';
+const SYNC_KEY = 'tesoucantabil_sync';
+
+let currentView = 'dashboard';
+let DB = {
+  lancamentos: [],
+  contas: [],
+  usuarios: [{ id: 1, nome: 'Admin', email: 'admin@tesoucantabil.ao' }],
+  recorrentes: [],
+  sincronizado: false,
+  ultimaSincronizacao: null
+};
+
+function loadDB() {
+  const saved = localStorage.getItem(SHARED_DB_KEY);
+  if(saved) {
+    try {
+      DB = JSON.parse(saved);
+    } catch(e) {
+      console.error('Erro ao carregar DB:', e);
+    }
+  }
+  verificarSincronizacao();
+}
+
+async function saveDB() {
+  localStorage.setItem(SHARED_DB_KEY, JSON.stringify(DB));
+  localStorage.setItem(SYNC_KEY, new Date().toISOString());
+  DB.ultimaSincronizacao = new Date().toISOString();
+}
+
+function verificarSincronizacao() {
+  const lastSync = localStorage.getItem(SYNC_KEY);
+  if(lastSync) {
+    DB.ultimaSincronizacao = lastSync;
+    DB.sincronizado = true;
+  }
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 3000);
+}
+
+function fmt(n) {
+  return Number(n).toLocaleString('pt-AO', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function uid() {
+  return 'id_' + Math.random().toString(36).substr(2, 9);
+}
+
+// ====== VIEWS ======
+function viewDashboard() {
+  const totalReceita = DB.lancamentos.filter(l => l.tipo === 'receita').reduce((a,b) => a + (b.valor||0), 0);
+  const totalDespesa = DB.lancamentos.filter(l => l.tipo === 'despesa').reduce((a,b) => a + (b.valor||0), 0);
+  const saldo = totalReceita - totalDespesa;
+  
+  return `
+    <h2>💰 Dashboard de Tesouraria</h2>
+    <div class="cards">
+      <div class="card">
+        <div class="lbl">Total Receitas</div>
+        <div class="val pos">${fmt(totalReceita)} Kz</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Total Despesas</div>
+        <div class="val neg">${fmt(totalDespesa)} Kz</div>
+      </div>
+      <div class="card">
+        <div class="lbl">Saldo Geral</div>
+        <div class="val ${saldo >= 0 ? 'pos' : 'neg'}">${fmt(saldo)} Kz</div>
+      </div>
+    </div>
+    <div class="note">
+      ℹ️ Este módulo gerencia o fluxo de caixa e tesouraria. Os dados estão sincronizados com a Contabilidade.
+      <a href="#" class="link-modulo" onclick="irPara('contabilidade');return false;" style="margin-top:8px;">→ Ir para Contabilidade</a>
+    </div>
+  `;
+}
+
+function viewLancamentos() {
+  let html = `<h2>📝 Lançamentos de Tesouraria</h2>
+    <form class="inline" id="formLancamento">
+      <div class="grid">
+        <div>
+          <label>Data</label>
+          <input type="date" name="data" required>
+        </div>
+        <div>
+          <label>Descrição</label>
+          <input type="text" name="descricao" placeholder="Ex: Pagamento cliente X" required>
+        </div>
+        <div>
+          <label>Tipo</label>
+          <select name="tipo" required>
+            <option value="">Selecione...</option>
+            <option value="receita">Receita</option>
+            <option value="despesa">Despesa</option>
+          </select>
+        </div>
+        <div>
+          <label>Valor (Kz)</label>
+          <input type="number" name="valor" step="0.01" required>
+        </div>
+        <div>
+          <label>Conta</label>
+          <select name="conta">
+            <option value="">Selecione conta...</option>
+            ${DB.contas.map(c => `<option value="${c.id}">${c.nome}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="submit">➕ Adicionar Lançamento</button>
+      </div>
+    </form>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Descrição</th>
+            <th>Tipo</th>
+            <th class="right">Valor</th>
+            <th>Conta</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${DB.lancamentos.map(l => `
+            <tr>
+              <td>${l.data || '-'}</td>
+              <td>${l.descricao || '-'}</td>
+              <td><span class="badge ${l.tipo === 'receita' ? 'pago' : 'pendente'}">${l.tipo}</span></td>
+              <td class="right ${l.tipo === 'receita' ? 'pos' : 'neg'}">${fmt(l.valor || 0)} Kz</td>
+              <td>${DB.contas.find(c => c.id === l.conta)?.nome || '-'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+  return html;
+}
+
+function viewContas() {
+  return `<h2>💳 Contas</h2>
+    <form class="inline" id="formConta">
+      <div class="grid">
+        <div>
+          <label>Nome da Conta</label>
+          <input type="text" name="nome" placeholder="Ex: Banco BFA" required>
+        </div>
+        <div>
+          <label>Número/IBAN</label>
+          <input type="text" name="numero" placeholder="Ex: IBAN...">
+        </div>
+        <div>
+          <label>Saldo Inicial (Kz)</label>
+          <input type="number" name="saldo" step="0.01" required>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="submit">➕ Adicionar Conta</button>
+      </div>
+    </form>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>IBAN/Número</th>
+            <th class="right">Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${DB.contas.map(c => `
+            <tr>
+              <td>${c.nome || '-'}</td>
+              <td><code>${c.numero || '-'}</code></td>
+              <td class="right">${fmt(c.saldo || 0)} Kz</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function viewPrevisao() {
+  const proximos30 = DB.lancamentos
+    .filter(l => new Date(l.data) <= new Date(Date.now() + 30*24*60*60*1000))
+    .reduce((a,b) => a + (b.tipo === 'receita' ? b.valor : -b.valor), 0);
+  
+  return `<h2>🔮 Previsão de Tesouraria</h2>
+    <div class="cards">
+      <div class="card">
+        <div class="lbl">Fluxo Próx. 30 Dias</div>
+        <div class="val ${proximos30 >= 0 ? 'pos' : 'neg'}">${fmt(proximos30)} Kz</div>
+      </div>
+    </div>
+    <div class="note">
+      Previsão calculada com base nos lançamentos agendados dos próximos 30 dias.
+    </div>
+  `;
+}
+
+function render() {
+  const main = document.getElementById('main');
+  switch(currentView) {
+    case 'dashboard': main.innerHTML = viewDashboard(); break;
+    case 'lancamentos': main.innerHTML = viewLancamentos(); bindForms(); break;
+    case 'contas': main.innerHTML = viewContas(); bindForms(); break;
+    case 'previsao': main.innerHTML = viewPrevisao(); break;
+  }
+  updateNav();
+}
+
+function updateNav() {
+  document.querySelectorAll('nav .item[data-view]').forEach(i => {
+    i.classList.toggle('active', i.dataset.view === currentView);
+  });
+}
+
+function bindForms() {
+  const formLancamento = document.getElementById('formLancamento');
+  if(formLancamento) {
+    formLancamento.onsubmit = async(e) => {
+      e.preventDefault();
+      const f = new FormData(formLancamento);
+      const novo = Object.fromEntries(f.entries());
+      novo.id = uid();
+      novo.valor = Number(novo.valor) || 0;
+      DB.lancamentos.push(novo);
+      await saveDB();
+      toast('Lançamento adicionado!');
+      render();
+    };
+  }
+  
+  const formConta = document.getElementById('formConta');
+  if(formConta) {
+    formConta.onsubmit = async(e) => {
+      e.preventDefault();
+      const f = new FormData(formConta);
+      const novo = Object.fromEntries(f.entries());
+      novo.id = uid();
+      novo.saldo = Number(novo.saldo) || 0;
+      DB.contas.push(novo);
+      await saveDB();
+      toast('Conta adicionada!');
+      render();
+    };
+  }
+}
+
+function irPara(modulo) {
+  if(modulo === 'contabilidade') {
+    window.open('contabilidade.html', '_blank');
+  } else if(modulo === 'analitica') {
+    window.open('contabilidade-analitica.html', '_blank');
+  }
+}
+
+// ====== INIT ======
+document.querySelectorAll('nav .item[data-view]').forEach(item => {
+  item.onclick = () => {
+    currentView = item.dataset.view;
+    render();
+  };
+});
+
+document.querySelectorAll('nav .item[data-link]').forEach(item => {
+  item.onclick = () => irPara(item.dataset.link);
+});
+
+loadDB();
+render();
+</script>
+</body>
+</html>
